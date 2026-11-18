@@ -32,7 +32,7 @@
     currentScript && currentScript.src
       ? currentScript.src.replace(/\/sdk\/slickpay-widget\.js(\?.*)?$/, '/api/checkout.php')
       : './api/checkout.php';
-  const widgetCssUrl = `${scriptBaseUrl}/slickpay-widget.css?v=4`;
+  const widgetCssUrl = `${scriptBaseUrl}/slickpay-widget.css?v=5`;
 
   // Configuration Globale partagée par tous les produits du site
   const globalConfig = {
@@ -40,7 +40,7 @@
     mode: 'mock',
     publicKey: '',
     accountType: 'users',
-    merchantName: 'Marchand SlickPay',
+    merchantName: 'Boutique Demo DZ',
     locale: 'fr',
     brandColor: '#635bff',
     deliveryFee: 0,
@@ -416,7 +416,7 @@
 
           <div class="sp-field">
             <label for="sp-fullName">${t.fullName} *</label>
-            <input id="sp-fullName" name="fullName" type="text" required value="${this.state.formValues.fullName.replace(/"/g, '&quot;')}" placeholder="Ex: Mokhtar Ghemri" />
+            <input id="sp-fullName" name="fullName" type="text" required value="${this.state.formValues.fullName.replace(/"/g, '&quot;')}" placeholder="Ex: Amine Benali" />
           </div>
 
           <div class="sp-field">

@@ -22,11 +22,67 @@ $payload = json_decode($rawBody, true) ?: [];
 
 $action = $_GET['action'] ?? ($payload['action'] ?? 'checkout');
 $mode = $payload['mode'] ?? (getenv('SLICKPAY_MODE') ?: 'mock');
-$publicKey = $payload['publicKey'] ?? (getenv('SLICKPAY_PUBLIC_KEY') ?: '');
+$publicKey = trim((string)($payload['publicKey'] ?? (getenv('SLICKPAY_PUBLIC_KEY') ?: '')));
 $accountType = $payload['accountType'] ?? (getenv('SLICKPAY_ACCOUNT_TYPE') ?: 'users'); // 'users' | 'merchants'
 $baseUrl = ($mode === 'production')
     ? 'https://prodapi.slick-pay.com/api/v2'
     : 'https://devapi.slick-pay.com/api/v2';
+
+// En-têtes HTTP avec User-Agent standard pour éviter les blocages Cloudflare (403) sur prodapi.slick-pay.com
+function buildSlickPayHeaders(string $publicKey, bool $isJson = true): array {
+    $headers = [
+        'Accept: application/json',
+        "Authorization: Bearer {$publicKey}",
+        'User-Agent: SlickPayBridgeSDK/1.0 (+https://slick-pay.com)'
+    ];
+    if ($isJson) {
+        $headers[] = 'Content-Type: application/json';
+    }
+    return $headers;
+}
+
+// Formate un message d'erreur clair à partir du code HTTP et de la réponse SlickPay
+function formatSlickPayError(int $httpCode, array $apiData, string $curlErr, string $mode, string $publicKey, string $accountType): string {
+    // Détection spécifique : utilisation de la clé publique Sandbox de démo en mode Production
+    if ($mode === 'production' && strpos($publicKey, '54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnBzK5cOE6') === 0) {
+        return 'Cette clé publique (54|BZ7F...) est une clé de test Sandbox. Pour utiliser le mode Production (prodapi.slick-pay.com), veuillez renseigner une clé publique de Production valide ou basculer sur Sandbox.';
+    }
+
+    if ($httpCode === 401) {
+        return "Clé publique SlickPay refusée (401 Unauthenticated) sur l'environnement [{$mode}]. Vérifiez que votre clé correspond bien à cet environnement.";
+    }
+
+    if ($httpCode === 403) {
+        return "Accès refusé par l'API SlickPay (403) en mode [{$mode}]. Si vous utilisez la clé de test Sandbox, sélectionnez l'environnement Sandbox (devapi.slick-pay.com).";
+    }
+
+    if (!empty($apiData['errors']) && is_array($apiData['errors'])) {
+        $flat = [];
+        foreach ($apiData['errors'] as $field => $msgs) {
+            if (is_array($msgs)) {
+                $flat[] = implode(' ', $msgs);
+            } elseif (is_string($msgs)) {
+                $flat[] = $msgs;
+            }
+        }
+        if (!empty($flat)) {
+            $detailMsg = implode(' | ', $flat);
+            if (stripos($detailMsg, 'tpv account') !== false) {
+                return "Compte TPV Marchand non configuré sur SlickPay pour la route /merchants/invoices. Utilisez le type de compte 'Standard (/api/v2/users/invoices)'.";
+            }
+            return "Erreur de validation SlickPay ({$httpCode}) : {$detailMsg}";
+        }
+    }
+
+    if (!empty($apiData['message'])) {
+        if (stripos($apiData['message'], 'tpv account') !== false) {
+            return "Compte TPV Marchand non configuré sur SlickPay pour la route /merchants/invoices. Utilisez le type de compte 'Standard (/api/v2/users/invoices)'.";
+        }
+        return "SlickPay ({$httpCode}) : " . $apiData['message'];
+    }
+
+    return $curlErr ?: "Erreur API SlickPay ({$httpCode})";
+}
 
 // 1. Calcul de commission (POST /api/v2/users/invoices/commission)
 if ($action === 'commission') {
@@ -52,11 +108,7 @@ if ($action === 'commission') {
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode(['amount' => $amount]),
-        CURLOPT_HTTPHEADER => [
-            'Accept: application/json',
-            'Content-Type: application/json',
-            "Authorization: Bearer {$publicKey}"
-        ],
+        CURLOPT_HTTPHEADER => buildSlickPayHeaders($publicKey, true),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 20,
     ]);
@@ -90,10 +142,7 @@ if ($action === 'status') {
     $endpoint = ($accountType === 'merchants') ? 'merchants/invoices' : 'users/invoices';
     $ch = curl_init("{$baseUrl}/{$endpoint}/" . urlencode($invoiceId));
     curl_setopt_array($ch, [
-        CURLOPT_HTTPHEADER => [
-            'Accept: application/json',
-            "Authorization: Bearer {$publicKey}"
-        ],
+        CURLOPT_HTTPHEADER => buildSlickPayHeaders($publicKey, false),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 20,
     ]);
@@ -111,7 +160,9 @@ $quantity = max(1, (int)($payload['quantity'] ?? 1));
 $deliveryFee = max(0, (float)($payload['deliveryFee'] ?? 0));
 $fullName = trim((string)($payload['fullName'] ?? ''));
 $email = trim((string)($payload['email'] ?? ''));
-$phone = trim((string)($payload['phone'] ?? ''));
+$rawPhone = trim((string)($payload['phone'] ?? ''));
+// Normalisation du téléphone (suppression des espaces/tirets)
+$phone = preg_replace('/[\s\-\.]+/', '', $rawPhone);
 $wilaya = str_pad(trim((string)($payload['wilaya'] ?? '16')), 2, '0', STR_PAD_LEFT);
 $address = trim((string)($payload['address'] ?? 'Algérie'));
 $productName = trim((string)($payload['productName'] ?? 'Commande Marchand'));
@@ -155,9 +206,11 @@ $totals = [
 $invoiceId = 'sp_' . bin2hex(random_bytes(6));
 $mdOrder = substr(rtrim(strtr(base64_encode(random_bytes(15)), '+/', '-_'), '='), 0, 20);
 
+// Séparation sécurisée prénom / nom : si l'utilisateur n'a saisi qu'un seul mot,
+// on renseigne automatiquement lastname pour éviter l'erreur HTTP 422 de SlickPay ("Le champ lastname est obligatoire.")
 $nameParts = preg_split('/\s+/', $fullName, 2);
-$firstname = $nameParts[0] ?: 'Client';
-$lastname = $nameParts[1] ?? 'SlickPay';
+$firstname = !empty($nameParts[0]) ? $nameParts[0] : 'Client';
+$lastname = (!empty($nameParts[1]) && strlen(trim($nameParts[1])) > 0) ? trim($nameParts[1]) : $firstname;
 
 // Si mode Mock ou absence de clé API publique : simulation fidèle de la réponse SATIM / SlickPay
 if ($mode === 'mock' || empty($publicKey)) {
@@ -193,18 +246,32 @@ if ($mode === 'mock' || empty($publicKey)) {
     exit;
 }
 
+// Vérification préventive : clé Sandbox utilisée en mode Production
+if ($mode === 'production' && strpos($publicKey, '54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnBzK5cOE6') === 0) {
+    http_response_code(400);
+    echo json_encode([
+        'ok' => false,
+        'mode' => $mode,
+        'error' => formatSlickPayError(403, [], '', $mode, $publicKey, $accountType)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // Mode API SlickPay v2 réel (Sandbox ou Production)
 $notes = [];
 foreach ($customFields as $k => $v) {
-    $notes[] = strtoupper((string)$k) . ': ' . (string)$v;
+    if ($v !== '') {
+        $notes[] = strtoupper((string)$k) . ': ' . (string)$v;
+    }
 }
 
-$returnUrl = $payload['returnUrl'] ?? 'https://connect-gm.com/slickpay-test/';
+$returnUrl = !empty($payload['returnUrl']) ? $payload['returnUrl'] : 'https://example.com/payment-return';
 $apiPayload = [
     'amount' => $totalChargeDzd,
     'url' => $returnUrl,
-    'firstname' => $firstname,
-    'lastname' => $lastname,
+    'name' => "{$firstname} {$lastname}", // Requis par /api/v2/merchants/invoices
+    'firstname' => $firstname,            // Requis par /api/v2/users/invoices
+    'lastname' => $lastname,              // Requis par /api/v2/users/invoices
     'email' => $email,
     'phone' => $phone,
     'address' => "{$address} (Wilaya {$wilaya})",
@@ -233,11 +300,7 @@ $ch = curl_init("{$baseUrl}/{$endpoint}");
 curl_setopt_array($ch, [
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => json_encode($apiPayload),
-    CURLOPT_HTTPHEADER => [
-        'Accept: application/json',
-        'Content-Type: application/json',
-        "Authorization: Bearer {$publicKey}"
-    ],
+    CURLOPT_HTTPHEADER => buildSlickPayHeaders($publicKey, true),
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT => 20,
 ]);
@@ -250,11 +313,11 @@ curl_close($ch);
 $apiData = json_decode($rawRes, true) ?: [];
 
 if ($httpCode >= 400 || !empty($apiData['errors']) || empty($rawRes)) {
-    http_response_code($httpCode ?: 502);
+    http_response_code($httpCode >= 400 ? $httpCode : 502);
     echo json_encode([
         'ok' => false,
         'mode' => $mode,
-        'error' => $apiData['message'] ?? ($curlErr ?: "Erreur API SlickPay ({$httpCode})"),
+        'error' => formatSlickPayError($httpCode, $apiData, $curlErr, $mode, $publicKey, $accountType),
         'details' => $apiData
     ], JSON_UNESCAPED_UNICODE);
     exit;
