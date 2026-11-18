@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SlickPay Bridge Studio — Générateur d'Intégration Multi-Produits</title>
+  <link rel="stylesheet" href="./playground.css?v=4" />
+  <link rel="stylesheet" href="./sdk/slickpay-widget.css?v=4" />
+  <script src="./sdk/slickpay-widget.js?v=4" defer></script>
+  <script src="./playground.js?v=4" defer></script>
+</head>
+<body>
+  <div class="container">
+    <span class="badge">SlickPay Developer Bridge · Générateur d'Intégration Multi-Produits</span>
+    <h1>Configurez votre Bridge une seule fois, intégrez tous vos produits</h1>
+    <p class="lead">
+      Renseignez vos informations marchands ci-dessous : le Studio génère automatiquement votre <strong>script d'initialisation unique</strong> (<code>SlickPay.init</code>) ainsi que les boutons prêts à coller pour l'ensemble de votre catalogue produits.
+    </p>
+
+    <div class="studio-grid">
+      <!-- COLONNE GAUCHE : FORMULAIRE DÉVELOPPEUR / MARCHAND -->
+      <div>
+        <div class="card">
+          <h2>
+            <span>1. Informations Marchand &amp; Clé API</span>
+            <span class="step-tag">Configuration Unique</span>
+          </h2>
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="cfg-merchant">Nom de votre Boutique / Entreprise</label>
+              <input id="cfg-merchant" type="text" value="GHEMRI Mokhtar" placeholder="Ex: Ma Boutique DZ" />
+            </div>
+
+            <div class="field">
+              <label for="cfg-locale">Langue par défaut du Checkout</label>
+              <select id="cfg-locale">
+                <option value="fr" selected>Français (FR)</option>
+                <option value="ar">العربية (AR - RTL)</option>
+                <option value="en">English (EN)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="cfg-mode">Environnement SlickPay</label>
+              <select id="cfg-mode">
+                <option value="mock">Mode Test Simulé (Sans clé API)</option>
+                <option value="sandbox" selected>Sandbox (devapi.slick-pay.com)</option>
+                <option value="production">Production (prodapi.slick-pay.com)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="cfg-account-type">Type de Compte API v2</label>
+              <select id="cfg-account-type">
+                <option value="users" selected>Standard (/api/v2/users/invoices)</option>
+                <option value="merchants">Marchand (/api/v2/merchants/invoices)</option>
+              </select>
+            </div>
+
+            <div class="field span-2">
+              <label for="cfg-pubkey">Votre Clé Publique SlickPay (Public Key)</label>
+              <input id="cfg-pubkey" type="text" value="54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnBzK5cOE6" placeholder="Ex: 54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnBzK5cOE6" />
+              <div class="field-hint">Clé Sandbox officielle pré-remplie pour tester immédiatement.</div>
+            </div>
+
+            <div class="field">
+              <label for="cfg-delivery">Frais de livraison par défaut (DZD)</label>
+              <input id="cfg-delivery" type="number" value="0" min="0" step="50" />
+            </div>
+
+            <div class="field">
+              <label for="cfg-return-url">URL de retour après paiement (Callback)</label>
+              <input id="cfg-return-url" type="url" value="https://connect-gm.com/slickpay-test/" placeholder="https://monsite.dz/merci" />
+            </div>
+
+            <div class="field span-2">
+              <label>Champs fiscaux B2B à demander à l'Étape 2 (Optionnels)</label>
+              <div class="checks-row">
+                <label class="check-item">
+                  <input type="checkbox" id="chk-nif" checked />
+                  <span>NIF (Identifiant Fiscal)</span>
+                </label>
+                <label class="check-item">
+                  <input type="checkbox" id="chk-rc" checked />
+                  <span>RC (Registre du Commerce)</span>
+                </label>
+                <label class="check-item">
+                  <input type="checkbox" id="chk-ai" />
+                  <span>AI (Article d'Imposition)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>
+            <span>2. Vos Produits / Services à intégrer</span>
+            <span class="step-tag">Multi-Produits</span>
+          </h2>
+          <p class="field-hint mb-10">
+            Ajoutez vos produits pour générer tous leurs boutons en une seule fois et les tester à droite :
+          </p>
+
+          <div id="catalog-list" class="catalog-list"></div>
+
+          <button type="button" id="btn-add-prod" class="btn-add-prod">
+            + Ajouter un autre produit au catalogue
+          </button>
+        </div>
+      </div>
+
+      <!-- COLONNE DROITE : APERÇU MULTI-PRODUITS EN DIRECT & CODE GÉNÉRÉ -->
+      <div>
+        <div class="card">
+          <h2>
+            <span>3. Aperçu en Direct de vos Boutons Multi-Produits</span>
+            <span class="step-tag">Test Live</span>
+          </h2>
+          <p class="field-hint mb-12">
+            Cliquez sur n'importe quel produit ci-dessous : ils partagent tous la même configuration globale (Étape 1) mais ouvrent le checkout Stripe en 3 étapes avec leur propre prix et nom.
+          </p>
+
+          <div id="preview-store-grid" class="preview-store-grid"></div>
+        </div>
+
+        <div class="card">
+          <h2>
+            <span>4. Code Généré Prêt à Copier-Coller</span>
+            <span class="step-tag">Plug &amp; Play</span>
+          </h2>
+
+          <div class="code-header">
+            <span class="code-title">Étape A — Initialisation Globale (1 seule fois sur tout le site)</span>
+            <button type="button" class="btn-copy" data-copy-target="code-global-snippet">Copier le script global</button>
+          </div>
+          <pre id="code-global-snippet"></pre>
+
+          <div class="code-header">
+            <span class="code-title">Étape B — Code de vos Produits (Choisissez votre style)</span>
+            <button type="button" class="btn-copy" data-copy-target="code-products-snippet">Copier les boutons</button>
+          </div>
+
+          <div class="tabs-bar">
+            <button type="button" class="tab-btn active" data-tab-format="webcomponent">
+              Balise &lt;slickpay-button&gt;
+            </button>
+            <button type="button" class="tab-btn" data-tab-format="dataattr">
+              Sur vos propres boutons (data-slickpay)
+            </button>
+            <button type="button" class="tab-btn" data-tab-format="js">
+              Panier Dynamique JS
+            </button>
+          </div>
+
+          <pre id="code-products-snippet"></pre>
+
+          <div class="code-header">
+            <span class="code-title">Journal Temps Réel des Transactions créées</span>
+          </div>
+          <pre id="event-log">// Cliquez sur l'un des produits de l'aperçu ci-dessus pour voir la réponse JSON SATIM / SlickPay...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
