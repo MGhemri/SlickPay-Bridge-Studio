@@ -23,18 +23,18 @@ test('SlickPay Universal Gateway SDK - Suite de tests complète', async (t) => {
     assert.equal(elMeniaa.name, 'El Meniaa');
   });
 
-  await t.test('2. Création de session Checkout Napoli PMS (45 000 DZD x 2 + NIF/RC)', async () => {
+  await t.test('2. Création de session Checkout B2B (45 000 DZD x 2 + NIF/RC)', async () => {
     const res = await fetch(`${baseUrl}/api/slickpay/checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        productName: 'Napoli PMS',
+        productName: 'Pack Business Pro',
         amount: 45000,
         quantity: 2,
         wilaya: '16',
         address: 'Alger Centre',
-        fullName: 'Mokhtar Ghemri',
-        email: 'contact@napoli-pms.dz',
+        fullName: 'Amine Benali',
+        email: 'client@exemple-dz.com',
         phone: '0550123456',
         customFields: {
           nif: '002616001234567',

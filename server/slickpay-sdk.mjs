@@ -2,7 +2,7 @@
  * SlickPay Gateway Core SDK (Node.js / Universal Fetch)
  * Gère la création de factures SlickPay API v2, la vérification de statut
  * et un mode Sandbox Simulé (sans clé ou avec clé de test) qui reproduit fidèlement
- * le retour SATIM EPG observé sur app.slick-pay.com/fr/shop/napoli-pms-2.
+ * le retour SATIM EPG.
  */
 
 import crypto from 'node:crypto';
@@ -137,7 +137,7 @@ export class SlickPayGateway {
     const address = String(payload.address || 'Algérie').trim();
     const productName = String(payload.productName || 'Commande Marchand').trim();
 
-    // Champs personnalisés B2B (ex: NIF, RC comme sur Napoli PMS)
+    // Champs personnalisés B2B (ex: NIF, RC, AI)
     const customFields = payload.customFields && typeof payload.customFields === 'object'
       ? payload.customFields
       : {};
@@ -155,7 +155,7 @@ export class SlickPayGateway {
 
     const nameParts = fullName.split(/\s+/);
     const firstname = nameParts[0] || 'Client';
-    const lastname = nameParts.slice(1).join(' ') || 'SlickPay';
+    const lastname = nameParts.slice(1).join(' ').trim() || firstname;
 
     return {
       productName,
@@ -246,10 +246,11 @@ export class SlickPayGateway {
       ...(rawPayload.contactUuid ? { contact: rawPayload.contactUuid } : {}),
       ...(rawPayload.accountUuid ? { account: rawPayload.accountUuid } : {}),
       ...(rawPayload.qrcode ? { qrcode: Boolean(rawPayload.qrcode) } : {}),
+      name: `${clean.firstname} ${clean.lastname}`,
       firstname: clean.firstname,
       lastname: clean.lastname,
       email: clean.email,
-      phone: clean.phone,
+      phone: clean.phone.replace(/[\s\-\.]+/g, ''),
       address: `${clean.address} (Wilaya ${clean.wilaya})`,
       items: [
         {
