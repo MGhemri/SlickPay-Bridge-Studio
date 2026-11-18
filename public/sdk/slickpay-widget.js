@@ -557,7 +557,7 @@
             </div>
 
             <div class="sp-footer">
-              <span>🔒 ${t.securedBy}</span>
+              <span>${t.securedBy}</span>
               ${
                 this.config.shopUrl
                   ? `<a href="${this.config.shopUrl}" target="_blank" rel="noopener">${t.openShopLink} ↗</a>`

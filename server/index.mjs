@@ -143,8 +143,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   const port = Number(process.env.PORT || 3400);
   const { server, gateway } = createGatewayServer();
   server.listen(port, () => {
-    console.log(`🚀 Passerelle SlickPay SDK active sur http://localhost:${port}`);
-    console.log(`📦 Script Widget : http://localhost:${port}/sdk/slickpay-widget.js`);
-    console.log(`⚙️  Mode actif    : ${gateway.mode}`);
+    console.log(`[SlickPay Bridge] Serveur actif sur http://localhost:${port}`);
+    console.log(`[SlickPay Bridge] Script Widget : http://localhost:${port}/sdk/slickpay-widget.js`);
+    console.log(`[SlickPay Bridge] Mode actif    : ${gateway.mode}`);
   });
 }
