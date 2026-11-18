@@ -1,0 +1,325 @@
+:root {
+  --bg: #f6f9fc;
+  --surface: #ffffff;
+  --border: #e3e8ee;
+  --primary: #635bff;
+  --navy: #0a2540;
+  --text: #3c4257;
+  --muted: #697386;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Ubuntu, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.container {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 36px 20px 60px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef2ff;
+  color: #4f46e5;
+  border: 1px solid #e0e7ff;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--navy);
+  letter-spacing: -0.02em;
+}
+p.lead {
+  color: var(--muted);
+  margin: 0 0 28px;
+  max-width: 820px;
+  font-size: 15px;
+}
+.studio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 920px) {
+  .studio-grid { grid-template-columns: 1fr; }
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(50, 50, 93, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03);
+  margin-bottom: 20px;
+}
+.card h2 {
+  margin-top: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--navy);
+  border-bottom: 1px solid #f0f3f7;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.step-tag {
+  background: #0a2540;
+  color: #ffffff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* Formulaire Studio Développeur */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.form-grid .span-2 {
+  grid-column: span 2;
+}
+@media (max-width: 540px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .form-grid .span-2 { grid-column: span 1; }
+}
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+.field input[type="text"],
+.field input[type="url"],
+.field input[type="number"],
+.field select {
+  width: 100%;
+  background: #ffffff;
+  color: var(--navy);
+  border: 1px solid #d8dee4;
+  padding: 9px 11px;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field input:focus,
+.field select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99, 91, 255, 0.14);
+}
+.field-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.field-hint.mb-10 {
+  margin-bottom: 10px;
+}
+.field-hint.mb-12 {
+  margin-bottom: 12px;
+}
+
+/* Checkboxes B2B */
+.checks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: #f6f9fc;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.check-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+/* Éditeur Catalogue Multi-Produits */
+.catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.catalog-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.3fr 0.8fr auto;
+  gap: 8px;
+  align-items: center;
+  background: #f6f9fc;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.catalog-row input {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #d8dee4;
+  padding: 7px 9px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: var(--navy);
+}
+.btn-remove-prod {
+  background: #fff5f5;
+  color: #cd3d64;
+  border: 1px solid #fbd5e0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.btn-add-prod {
+  background: #ffffff;
+  color: var(--primary);
+  border: 1px dashed #635bff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+.btn-add-prod:hover {
+  background: #eef2ff;
+}
+
+/* Blocs de code générés */
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.code-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--navy);
+}
+.btn-copy {
+  background: #0a2540;
+  color: #ffffff;
+  border: none;
+  padding: 5px 12px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-copy:hover {
+  background: var(--primary);
+}
+pre {
+  background: #0a2540;
+  border: 1px solid #1a365d;
+  padding: 14px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  color: #e6ebf1;
+  line-height: 1.55;
+  margin: 0 0 18px;
+}
+
+/* Aperçu Boutique Multi-Produits en direct */
+.preview-store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.store-product-card {
+  background: #f6f9fc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+}
+.store-prod-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 0 0 4px;
+}
+.store-prod-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.store-prod-price {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 10px;
+}
+.custom-html-btn {
+  width: 100%;
+  background: #0a2540;
+  color: #ffffff;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.custom-html-btn:hover {
+  background: #635bff;
+}
+
+.tabs-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.tab-btn {
+  background: #f6f9fc;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab-btn.active {
+  background: #0a2540;
+  color: #ffffff;
+  border-color: #0a2540;
+}
+
+#event-log {
+  min-height: 95px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: #a3e635;
+  margin-bottom: 0;
+}

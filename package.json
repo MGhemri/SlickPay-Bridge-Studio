@@ -1,0 +1,22 @@
+{
+  "name": "slickpay-gateway-sdk",
+  "version": "1.0.0",
+  "description": "Passerelle & Widget Universel SlickPay (CIB / Edahabia / SATIM) facile à intégrer pour les développeurs web",
+  "type": "module",
+  "main": "server/index.mjs",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test test/gateway.test.mjs"
+  },
+  "keywords": [
+    "slickpay",
+    "satim",
+    "cib",
+    "edahabia",
+    "algeria",
+    "payment-gateway",
+    "web-component"
+  ],
+  "author": "GHEMRI Mokhtar (MGhemri)",
+  "license": "MIT"
+}

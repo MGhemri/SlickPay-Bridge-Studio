@@ -1,0 +1,9 @@
+# Désactiver le cache sur la page de test pour que les mises à jour soient visibles immédiatement
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|php|js|css)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+</IfModule>
+DirectoryIndex index.php index.html
