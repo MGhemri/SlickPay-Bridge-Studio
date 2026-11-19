@@ -220,5 +220,5 @@ SlickPay-Bridge-Studio/
 ## Licence
 
 Ce projet est distribué sous une licence spécifique (voir le fichier [LICENSE](LICENSE)) :
-- **Utilisation gratuite pour les développeurs et marchands** : Tout développeur, freelance ou commerçant peut utiliser, modifier et intégrer gratuitement ce Bridge sur ses sites web ou ceux de ses clients pour accepter des paiements via SlickPay.
-- **Restriction de commercialisation** : Il est interdit de revendre ce logiciel en tant que plugin/service payant ou de l'exploiter commercialement au sein d'une plateforme de paiement sans l'accord écrit préalable de l'auteur.
+- **Utilisation gratuite pour le développeur lui-même (usage propre uniquement)** : Tout développeur peut utiliser, modifier et intégrer gratuitement ce Bridge sur ses propres sites web et projets dont il est directement propriétaire.
+- **Restriction de commercialisation et prestations clients** : L'utilisation pour des clients tiers (prestations facturées, agences), la revente du logiciel en tant que plugin/service payant ou son exploitation commerciale au sein d'une plateforme de paiement sont interdites sans l'accord écrit préalable de l'auteur.
