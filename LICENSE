@@ -3,28 +3,32 @@ SLICKPAY BRIDGE STUDIO — LICENCE D'UTILISATION DÉVELOPPEUR & RESTRICTION COMM
 
 Copyright (c) 2026 SlickPay Bridge Studio Contributors. Tous droits réservés.
 
-1. UTILISATION GRATUITE POUR LES DÉVELOPPEURS ET MARCHANDS
-----------------------------------------------------------
-La permission est accordée gratuitement à tout développeur, intégrateur, freelance
-ou marchand d'utiliser, copier, modifier et intégrer ce logiciel et sa documentation
-(le « Logiciel ») sur ses propres sites web, boutiques en ligne ou applications
-clientes afin d'accepter des paiements via la passerelle SlickPay (CIB / Edahabia / SATIM).
+1. UTILISATION GRATUITE POUR LE DÉVELOPPEUR LUI-MÊME (USAGE PROPRE UNIQUEMENT)
+------------------------------------------------------------------------------
+La permission est accordée gratuitement à tout développeur d'utiliser, copier,
+modifier et intégrer ce logiciel et sa documentation (le « Logiciel ») uniquement
+pour ses propres besoins, sur ses propres projets, sites web ou applications dont
+il est directement propriétaire, afin d'accepter des paiements via la passerelle
+SlickPay (CIB / Edahabia / SATIM).
 
-2. RESTRICTION DE COMMERCIALISATION (USAGE COMMERCIAL INTERDIT SANS ACCORD)
----------------------------------------------------------------------------
-Il est strictement interdit, sans un accord écrit préalable et une licence commerciale
-délivrée par l'auteur titulaire des droits :
-  a) De vendre, louer, sous-licencier ou facturer le Logiciel lui-même en tant que
+2. RESTRICTION DE COMMERCIALISATION ET PRESTATION POUR CLIENTS TIERS
+--------------------------------------------------------------------
+L'utilisation gratuite ne couvre PAS la facturation ou le déploiement du Logiciel
+au profit de clients tiers. Il est strictement interdit, sans un accord écrit
+préalable et une licence commerciale délivrée par l'auteur titulaire des droits :
+  a) D'intégrer, vendre, facturer ou déployer le Logiciel dans le cadre d'une
+     prestation commerciale pour des clients tiers (agences, freelances facturant
+     l'intégration à un client, sous-traitance commerciale) ;
+  b) De vendre, louer, sous-licencier ou facturer le Logiciel lui-même en tant que
      produit, plugin payant, extension payante ou service SaaS/passerelle monétisé ;
-  b) D'intégrer ou d'héberger le Logiciel au sein d'une plateforme de paiement,
-     d'un agrégateur financier ou d'une offre commerciale destinée à être revendue
-     ou proposée commercialement à des tiers ;
-  c) De retirer les mentions de droits d'auteur et la présente licence dans les
+  c) D'intégrer ou d'héberger le Logiciel au sein d'une plateforme de paiement,
+     d'un agrégateur financier ou d'une offre commerciale destinée à des tiers ;
+  d) De retirer les mentions de droits d'auteur et la présente licence dans les
      copies substantielles du Logiciel.
 
-Pour toute demande de licence commerciale, de partenariat ou d'hébergement officiel
-(notamment pour une intégration native par un prestataire de paiement), veuillez
-contacter le titulaire du dépôt GitHub.
+Pour toute demande de licence commerciale (déploiement pour des clients, partenariat
+ou hébergement officiel par un prestataire de paiement), veuillez contacter le
+titulaire du dépôt GitHub.
 
 3. ABSENCE DE GARANTIE
 ----------------------
@@ -33,13 +37,15 @@ IMPLICITE, Y COMPRIS MAIS SANS S'Y LIMITER LES GARANTIES DE QUALITÉ MARCHANDE,
 D'ADÉQUATION À UN USAGE PARTICULIER ET D'ABSENCE DE CONTREFAÇON.
 
 ====================================================================================
-ENGLISH SUMMARY — DEVELOPER FREE USE & NON-COMMERCIAL RESALE LICENSE
+ENGLISH SUMMARY — DEVELOPER OWN-USE FREE LICENSE & COMMERCIAL RESTRICTION
 ====================================================================================
 
-1. Free for Developers & Merchants: You may freely use, modify, and integrate this
-   Software into your own websites, online stores, or client projects to accept
-   SlickPay payments at no cost.
-2. Commercialization Prohibited Without Agreement: You may NOT sell, resell,
-   sublicense, or monetize this Software itself as a paid plugin, SaaS platform,
-   or commercial payment provider feature without a prior written commercial license
-   from the copyright holder.
+1. Free for the Developer's Own Projects Only: A developer may freely use, modify,
+   and integrate this Software into their own personal or directly owned websites
+   and applications at no cost.
+2. Client Work & Commercialization Prohibited Without Agreement: Deploying or
+   integrating this Software for third-party clients (commercial client projects,
+   agency work), or selling, reselling, sublicensing, or monetizing this Software
+   as a paid plugin, SaaS platform, or commercial payment provider feature is
+   strictly prohibited without a prior written commercial license from the
+   copyright holder.
