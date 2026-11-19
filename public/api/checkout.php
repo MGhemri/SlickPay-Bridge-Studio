@@ -1,18 +1,24 @@
 <?php
 /**
  * SlickPay Universal Gateway — Backend Proxy Endpoint (PHP / cPanel)
- * Implémentation durcie suite à l'audit de sécurité :
- * - Limitation de débit (Rate Limiter par IP)
- * - Verrouillage serveur de mode / publicKey / accountType / returnUrl (sauf si SLICKPAY_ALLOW_CLIENT_OVERRIDE=true pour le Studio de démo)
- * - Catalogue serveur ou vérification de signature HMAC du prix (si SLICKPAY_REQUIRE_PRICE_SIGNATURE=true)
- * - Validation algérienne du téléphone (05/06/07/02..04/+213), validation de la wilaya (01..58), plafonds et ligne de livraison dans items[]
- * - Envoi de webhook_url, webhook_signature et qrcode, et absence de fuite de rawResponse/details bruts
+ * - Verrouillage explicite opt-in de l'override client (SLICKPAY_ALLOW_CLIENT_OVERRIDE=true requis)
+ * - En production (SLICKPAY_MODE=production), SLICKPAY_WEBHOOK_SECRET est obligatoire et le verrouillage des prix
+ *   (catalogue SLICKPAY_CATALOG_JSON ou signature HMAC priceSignature) est actif par défaut
+ * - webhookUrl, contactUuid, accountUuid et qrcode proviennent exclusivement de la configuration serveur
+ * - Validation stricte des champs personnalisés, téléphone algérien (05/06/07/02..04/+213) et wilaya (01..58)
  */
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
-$allowedOriginsEnv = getenv('SLICKPAY_ALLOWED_ORIGINS') ?: '*';
+$envPublicKey = trim((string)(getenv('SLICKPAY_PUBLIC_KEY') ?: ''));
+$envMode = trim((string)(getenv('SLICKPAY_MODE') ?: ($envPublicKey !== '' ? 'sandbox' : 'mock')));
+$envAccountType = trim((string)(getenv('SLICKPAY_ACCOUNT_TYPE') ?: 'users'));
+$envWebhookSecret = trim((string)(getenv('SLICKPAY_WEBHOOK_SECRET') ?: ''));
+
+// CORS : en production, pas de wildcard '*' par défaut si SLICKPAY_ALLOWED_ORIGINS n'est pas défini
+$defaultCors = ($envMode === 'production') ? '' : '*';
+$allowedOriginsEnv = getenv('SLICKPAY_ALLOWED_ORIGINS') !== false ? (string)getenv('SLICKPAY_ALLOWED_ORIGINS') : $defaultCors;
 $allowedOrigins = array_values(array_filter(array_map('trim', explode(',', $allowedOriginsEnv))));
 $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array('*', $allowedOrigins, true)) {
@@ -31,9 +37,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Limitation de débit par IP (60 requêtes / minute dans un fichier temporaire local)
+/**
+ * Calcule la signature HMAC-SHA256 d'un produit pour verrouiller son prix côté serveur
+ */
+function slickpaySignProductPrice(string $productName, float $unitPrice, float $deliveryFee, string $secret): string {
+    $canonical = sprintf('price:%s:%.2f:%.2f', trim($productName), round($unitPrice, 2), round($deliveryFee, 2));
+    return hash_hmac('sha256', $canonical, $secret);
+}
+
+// Limitation de débit par IP (supporte CF-Connecting-IP / X-Forwarded-For uniquement si SLICKPAY_TRUST_PROXY=true)
+function resolveClientIp(): string {
+    if (getenv('SLICKPAY_TRUST_PROXY') === 'true') {
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+            return trim((string)$_SERVER['HTTP_CF_CONNECTING_IP']);
+        }
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $parts = explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR']);
+            return trim($parts[0]);
+        }
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+}
+
 function enforceRateLimit(int $maxPerMinute = 60): void {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    $ip = resolveClientIp();
     $bucketFile = sys_get_temp_dir() . '/sp_rl_' . md5($ip) . '.json';
     $now = time();
     $data = ['count' => 0, 'resetAt' => $now + 60];
@@ -63,19 +90,26 @@ if ($rawBody !== false && strlen($rawBody) > 65536) {
 }
 $payload = $rawBody ? (json_decode($rawBody, true) ?: []) : [];
 
-$envPublicKey = trim((string)(getenv('SLICKPAY_PUBLIC_KEY') ?: ''));
-$envMode = trim((string)(getenv('SLICKPAY_MODE') ?: ($envPublicKey !== '' ? 'sandbox' : 'mock')));
-$envAccountType = trim((string)(getenv('SLICKPAY_ACCOUNT_TYPE') ?: 'users'));
-$webhookSecret = trim((string)(getenv('SLICKPAY_WEBHOOK_SECRET') ?: 'slickpay-dev-only-secret-do-not-use-in-prod'));
-
-// Si aucune clé serveur n'est verrouillée dans l'environnement (ex: bac à sable Studio de démo) ou si SLICKPAY_ALLOW_CLIENT_OVERRIDE=true
-$allowClientOverride = (getenv('SLICKPAY_ALLOW_CLIENT_OVERRIDE') === 'true') || ($envPublicKey === '');
+// L'override client est strictement opt-in via SLICKPAY_ALLOW_CLIENT_OVERRIDE=true (et jamais implicite quand la clé est vide)
+$allowClientOverride = (getenv('SLICKPAY_ALLOW_CLIENT_OVERRIDE') === 'true');
 
 $action = $_GET['action'] ?? ($payload['action'] ?? 'checkout');
 $mode = ($allowClientOverride && !empty($payload['mode'])) ? (string)$payload['mode'] : $envMode;
 if (!in_array($mode, ['mock', 'sandbox', 'production'], true)) {
     $mode = 'mock';
 }
+
+// En mode production, SLICKPAY_WEBHOOK_SECRET est strictement obligatoire
+if ($mode === 'production' && $envWebhookSecret === '') {
+    http_response_code(500);
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Configuration serveur incomplète : SLICKPAY_WEBHOOK_SECRET est obligatoire en mode production.'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+$webhookSecret = $envWebhookSecret !== '' ? $envWebhookSecret : 'slickpay-dev-only-secret-do-not-use-in-prod';
+
 $publicKey = ($allowClientOverride && isset($payload['publicKey']))
     ? trim((string)$payload['publicKey'])
     : $envPublicKey;
@@ -94,7 +128,7 @@ function buildSlickPayHeaders(string $publicKey, bool $isJson = true): array {
     $headers = [
         'Accept: application/json',
         "Authorization: Bearer {$publicKey}",
-        'User-Agent: SlickPayBridgeSDK/1.0 (+https://slick-pay.com)'
+        'User-Agent: SlickPayBridgeSDK/1.1 (+https://slick-pay.com)'
     ];
     if ($isJson) {
         $headers[] = 'Content-Type: application/json';
@@ -185,7 +219,7 @@ if ($action === 'commission') {
     exit;
 }
 
-// 2. Vérification de statut (GET /api/v2/users/invoices/:id) — sans exposition de PII
+// 2. Vérification de statut (GET /api/v2/users/invoices/:id)
 if ($action === 'status') {
     $invoiceId = trim((string)($_GET['id'] ?? ($payload['invoiceId'] ?? '')));
     if ($invoiceId === '' || !preg_match('/^[a-zA-Z0-9_-]{1,64}$/', $invoiceId)) {
@@ -237,13 +271,31 @@ $unitPrice = round((float)($payload['amount'] ?? $payload['unitPrice'] ?? 0), 2)
 $quantity = (int)($payload['quantity'] ?? 1);
 $deliveryFee = round(max(0.0, (float)($payload['deliveryFee'] ?? 0)), 2);
 
-// Vérification optionnelle de signature HMAC du prix si SLICKPAY_REQUIRE_PRICE_SIGNATURE=true
-$requirePriceSig = (getenv('SLICKPAY_REQUIRE_PRICE_SIGNATURE') === 'true');
-if ($requirePriceSig || !empty($payload['priceSignature'])) {
-    $canonical = sprintf('price:%s:%.2f:%.2f', $productName, $unitPrice, $deliveryFee);
-    $expectedSig = hash_hmac('sha256', $canonical, $webhookSecret);
+// Résolution du prix via Catalogue serveur (SLICKPAY_CATALOG_JSON) ou Signature HMAC (priceSignature)
+$catalogJson = getenv('SLICKPAY_CATALOG_JSON');
+$catalog = $catalogJson ? (json_decode($catalogJson, true) ?: []) : [];
+$productId = trim((string)($payload['productId'] ?? ''));
+
+$requirePriceSigEnv = getenv('SLICKPAY_REQUIRE_PRICE_SIGNATURE');
+$requirePriceSig = ($requirePriceSigEnv !== false && $requirePriceSigEnv !== '')
+    ? ($requirePriceSigEnv === 'true')
+    : ($mode === 'production');
+
+if ($productId !== '' && isset($catalog[$productId]) && is_array($catalog[$productId])) {
+    $productName = (string)($catalog[$productId]['name'] ?? $productName);
+    $unitPrice = round((float)($catalog[$productId]['unitPrice'] ?? $unitPrice), 2);
+    if (isset($catalog[$productId]['deliveryFee'])) {
+        $deliveryFee = round(max(0.0, (float)$catalog[$productId]['deliveryFee']), 2);
+    }
+} elseif ($requirePriceSig || !empty($payload['priceSignature'])) {
+    if ($envWebhookSecret === '' && $mode === 'production') {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'SLICKPAY_WEBHOOK_SECRET est requis pour vérifier la signature de prix.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $expectedSig = slickpaySignProductPrice($productName, $unitPrice, $deliveryFee, $webhookSecret);
     $providedSig = (string)($payload['priceSignature'] ?? '');
-    if (!hash_equals($expectedSig, $providedSig)) {
+    if ($providedSig === '' || !hash_equals($expectedSig, $providedSig)) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Signature de prix (priceSignature) invalide ou absente.'], JSON_UNESCAPED_UNICODE);
         exit;
@@ -257,24 +309,31 @@ $phone = preg_replace('/[\s\-\.\(\)]+/', '', $rawPhone);
 $wilaya = str_pad(trim((string)($payload['wilaya'] ?? '16')), 2, '0', STR_PAD_LEFT);
 $address = mb_substr(trim((string)($payload['address'] ?? 'Algérie')), 0, 300);
 
-$allowedCustomKeys = ['nif', 'rc', 'ai', 'nis', 'tin', 'company', 'reference'];
 $customFields = [];
 $errors = [];
 
-if (isset($payload['customFields']) && is_array($payload['customFields'])) {
-    foreach ($payload['customFields'] as $k => $v) {
-        $cleanKey = strtolower(trim((string)$k));
-        if (!in_array($cleanKey, $allowedCustomKeys, true)) {
-            continue;
+if (isset($payload['customFields'])) {
+    if (!is_array($payload['customFields'])) {
+        $errors[] = 'Le paramètre customFields doit être un objet clé-valeur.';
+    } else {
+        if (count($payload['customFields']) > 10) {
+            $errors[] = 'Maximum 10 champs personnalisés autorisés.';
         }
-        if ($v === null || $v === '') {
-            continue;
+        foreach ($payload['customFields'] as $k => $v) {
+            $cleanKey = strtolower(trim((string)$k));
+            if (!preg_match('/^[a-z0-9_]{1,32}$/', $cleanKey)) {
+                $errors[] = "Nom de champ personnalisé invalide : {$cleanKey}.";
+                continue;
+            }
+            if ($v === null || $v === '') {
+                continue;
+            }
+            if (!is_scalar($v)) {
+                $errors[] = "Le champ personnalisé {$cleanKey} doit être une chaîne ou un nombre.";
+                continue;
+            }
+            $customFields[$cleanKey] = mb_substr(trim((string)$v), 0, 120);
         }
-        if (!is_scalar($v)) {
-            $errors[] = "Le champ personnalisé {$cleanKey} est invalide.";
-            continue;
-        }
-        $customFields[$cleanKey] = mb_substr(trim((string)$v), 0, 120);
     }
 }
 
@@ -311,9 +370,11 @@ if (!empty($errors)) {
     exit;
 }
 
-// Validation stricte de returnUrl contre une liste blanche d'hôtes
-$defaultReturnUrl = getenv('SLICKPAY_RETURN_URL') ?: 'https://connect-gm.com/slickpay-test/';
-$allowedReturnHostsEnv = getenv('SLICKPAY_ALLOWED_RETURN_HOSTS') ?: 'connect-gm.com,monsite-exemple.dz,localhost,127.0.0.1';
+// URL de retour neutre basée sur l'hôte courant si SLICKPAY_RETURN_URL n'est pas configuré
+$currentHost = strtolower(preg_replace('/:[0-9]+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
+$currentScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$defaultReturnUrl = getenv('SLICKPAY_RETURN_URL') ?: "{$currentScheme}://{$currentHost}/";
+$allowedReturnHostsEnv = getenv('SLICKPAY_ALLOWED_RETURN_HOSTS') ?: "{$currentHost},localhost,127.0.0.1";
 $allowedReturnHosts = array_values(array_filter(array_map('strtolower', array_map('trim', explode(',', $allowedReturnHostsEnv)))));
 
 $returnUrl = $defaultReturnUrl;
@@ -347,7 +408,7 @@ $totals = [
     'totalCharge' => (int)round($totalChargeDzd * 100),
 ];
 
-$invoiceId = 'sp_' . bin2hex(random_bytes(6));
+$localInvoiceRef = 'sp_' . bin2hex(random_bytes(6));
 $mdOrder = substr(rtrim(strtr(base64_encode(random_bytes(15)), '+/', '-_'), '='), 0, 20);
 
 $nameParts = preg_split('/\s+/', $fullName, 2);
@@ -360,7 +421,8 @@ if ($mode === 'mock' || empty($publicKey)) {
         'ok' => true,
         'mode' => 'mock',
         'accountType' => $accountType,
-        'invoiceId' => $invoiceId,
+        'invoiceId' => $localInvoiceRef,
+        'localInvoiceRef' => $localInvoiceRef,
         'mdOrder' => $mdOrder,
         'status' => 'pending',
         'createdAt' => gmdate('c'),
@@ -419,7 +481,7 @@ if ($deliveryFee > 0) {
     ];
 }
 
-$webhookCanonical = sprintf('webhook:%s:%d:paid', $invoiceId, $totals['totalCharge']);
+$webhookCanonical = sprintf('webhook:%s:%d:paid', $localInvoiceRef, $totals['totalCharge']);
 $webhookSignature = hash_hmac('sha256', $webhookCanonical, $webhookSecret);
 
 $apiPayload = [
@@ -435,21 +497,25 @@ $apiPayload = [
     'note' => implode(' | ', $notes),
     'webhook_signature' => $webhookSignature,
     'webhook_meta_data' => [
-        array_merge(['invoice_ref' => $invoiceId, 'wilaya' => $wilaya], $customFields)
+        array_merge(['invoice_ref' => $localInvoiceRef, 'wilaya' => $wilaya], $customFields)
     ]
 ];
 
-if (!empty($payload['webhookUrl']) && is_string($payload['webhookUrl']) && strpos($payload['webhookUrl'], 'https://') === 0) {
-    $apiPayload['webhook_url'] = $payload['webhookUrl'];
+// Paramètres métier sensibles lus exclusivement depuis les variables d'environnement du serveur
+$serverWebhookUrl = trim((string)(getenv('SLICKPAY_WEBHOOK_URL') ?: ''));
+if ($serverWebhookUrl !== '' && strpos($serverWebhookUrl, 'https://') === 0) {
+    $apiPayload['webhook_url'] = $serverWebhookUrl;
 }
-if (!empty($payload['qrcode'])) {
-    $apiPayload['qrcode'] = (bool)$payload['qrcode'];
+if (getenv('SLICKPAY_QRCODE') === 'true') {
+    $apiPayload['qrcode'] = true;
 }
-if (!empty($payload['contactUuid']) && is_string($payload['contactUuid'])) {
-    $apiPayload['contact'] = $payload['contactUuid'];
+$serverContactUuid = trim((string)(getenv('SLICKPAY_CONTACT_UUID') ?: ''));
+if ($serverContactUuid !== '') {
+    $apiPayload['contact'] = $serverContactUuid;
 }
-if (!empty($payload['accountUuid']) && is_string($payload['accountUuid'])) {
-    $apiPayload['account'] = $payload['accountUuid'];
+$serverAccountUuid = trim((string)(getenv('SLICKPAY_ACCOUNT_UUID') ?: ''));
+if ($serverAccountUuid !== '') {
+    $apiPayload['account'] = $serverAccountUuid;
 }
 
 $endpoint = ($accountType === 'merchants') ? 'merchants/invoices' : 'users/invoices';
@@ -480,7 +546,7 @@ if ($httpCode >= 400 || !empty($apiData['errors']) || empty($rawRes)) {
     exit;
 }
 
-$remoteId = (string)($apiData['id'] ?? ($apiData['data']['id'] ?? $invoiceId));
+$remoteId = (string)($apiData['id'] ?? ($apiData['data']['id'] ?? $localInvoiceRef));
 $candidatePaymentUrl = (string)($apiData['url']
     ?? ($apiData['data']['url'] ?? "https://cib.satim.dz/payment/epg/merchants/merchantsatim/payment.html?mdOrder={$mdOrder}&language=fr"));
 
@@ -496,6 +562,7 @@ echo json_encode([
     'mode' => $mode,
     'accountType' => $accountType,
     'invoiceId' => $remoteId,
+    'localInvoiceRef' => $localInvoiceRef,
     'mdOrder' => $mdOrder,
     'status' => 'pending',
     'createdAt' => gmdate('c'),

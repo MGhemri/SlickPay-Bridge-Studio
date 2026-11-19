@@ -169,6 +169,44 @@ window.addEventListener("slickpay:session-error", function (event) {
 
 ---
 
+## Architecture Backend, Verrouillage des Prix et Sécurité en Production
+
+En environnement de production (`SLICKPAY_MODE=production`), la passerelle active automatiquement le **verrouillage des prix côté serveur** (`requirePriceSignature: true`) et exige un secret HMAC (`SLICKPAY_WEBHOOK_SECRET`) afin qu'un visiteur ne puisse jamais modifier le prix d'un produit dans le navigateur.
+
+Vous disposez de deux mécanismes pour certifier les prix côté serveur :
+
+### Option 1 — Catalogue de produits côté serveur (`productId`)
+
+Déclarez votre catalogue sur le serveur (en Node.js via l'option `catalog`, ou en PHP via la variable d'environnement `SLICKPAY_CATALOG_JSON`) :
+
+```javascript
+// Exemple Node.js
+const { server } = createGatewayServer({
+  mode: "production",
+  publicKey: process.env.SLICKPAY_PUBLIC_KEY,
+  webhookSecret: process.env.SLICKPAY_WEBHOOK_SECRET,
+  defaultReturnUrl: "https://maboutique.dz/payment-return",
+  allowedReturnHosts: ["maboutique.dz"],
+  catalog: {
+    "plan-starter": { name: "Abonnement Starter", unitPrice: 4500, deliveryFee: 0 },
+    "plan-pro":     { name: "Pack Business Pro", unitPrice: 45000, deliveryFee: 0 }
+  }
+});
+```
+
+Côté HTML, le bouton référence alors `product-id="plan-pro"` : même si un utilisateur modifie `amount` dans l'inspecteur du navigateur, le serveur appliquera strictement le prix du catalogue (`45 000 DZD`).
+
+### Option 2 — Signature cryptographique HMAC-SHA256 du prix (`priceSignature`)
+
+Si vos prix sont générés dynamiquement par votre CMS/base de données sans catalogue fixe, signez le triplet `price:{productName}:{unitPrice.toFixed(2)}:{deliveryFee.toFixed(2)}` avec votre `SLICKPAY_WEBHOOK_SECRET` :
+
+- **En Node.js** : `const sig = gateway.signProductPrice("Pack Pro", 45000, 0);`
+- **En PHP** : `$sig = slickpaySignProductPrice("Pack Pro", 45000, 0, getenv("SLICKPAY_WEBHOOK_SECRET"));`
+
+Passez ensuite cette signature dans l'attribut `price-signature="..."` (ou `data-price-signature="..."`).
+
+---
+
 ## Développement et test du code source en local (Optionnel — Mode 3)
 
 Si vous êtes développeur et souhaitez modifier le code source ou exécuter les tests unitaires sur votre machine locale (nécessite Node.js 18+) :

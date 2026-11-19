@@ -100,6 +100,18 @@ La clé pré-remplie dans le générateur (`54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnB
 - **`Standard (/api/v2/users/invoices)`** fonctionne immédiatement avec toutes les clés publiques SlickPay standards (Sandbox et Production). C'est l'option recommandée par défaut.
 - **`Marchand (/api/v2/merchants/invoices)`** correspond à la classe `MerchantInvoice` des SDKs SlickPay et exige que votre compte SlickPay ait un contrat TPV bancaire formellement rattaché côté SlickPay.
 
+### 3. Comment sécuriser mes prix en Production contre la modification dans le navigateur ?
+En mode `production`, la passerelle active automatiquement la vérification des prix :
+- **Via Catalogue (`SLICKPAY_CATALOG_JSON` en PHP ou `catalog` en Node.js)** : définissez vos identifiants produits (`product-id="plan-pro"`) et leurs prix sur le serveur.
+- **Via Signature HMAC (`priceSignature`)** : calculez la signature HMAC-SHA256 côté serveur avec `slickpaySignProductPrice($nom, $prix, $livraison, $secret)` en PHP (ou `gateway.signProductPrice(...)` en Node.js) et ajoutez `price-signature="..."` sur votre bouton.
+- **Variables d'environnement recommandées en Production** :
+  - `SLICKPAY_MODE=production`
+  - `SLICKPAY_PUBLIC_KEY=votre_cle_publique_production`
+  - `SLICKPAY_WEBHOOK_SECRET=votre_secret_hmac_long_et_aleatoire`
+  - `SLICKPAY_RETURN_URL=https://maboutique.dz/merci`
+  - `SLICKPAY_ALLOWED_RETURN_HOSTS=maboutique.dz`
+  - `SLICKPAY_ALLOWED_ORIGINS=https://maboutique.dz`
+
 ---
 
 ## Licence et Contact Commercial

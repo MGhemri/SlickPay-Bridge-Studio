@@ -243,6 +243,10 @@
     }
 
     open(config = {}) {
+      const parsedAmount = Number(config.amount);
+      const hasValidAmount = Number.isFinite(parsedAmount) && parsedAmount >= 100;
+      const hasProductId = Boolean(config.productId && String(config.productId).trim());
+
       this.config = {
         endpoint: config.endpoint || globalConfig.endpoint,
         mode: config.mode || globalConfig.mode,
@@ -253,7 +257,7 @@
         productName: config.productName || 'Commande',
         productDescription:
           config.productDescription || 'Paiement sécurisé CIB / Edahabia',
-        amount: Number(config.amount || 45000),
+        amount: hasValidAmount ? parsedAmount : 0,
         deliveryFee:
           config.deliveryFee !== undefined
             ? Number(config.deliveryFee)
@@ -276,7 +280,10 @@
       this.state.step = 1;
       this.state.quantity = Math.max(1, Math.min(1000, parseInt(config.quantity || 1, 10) || 1));
       this.state.loading = false;
-      this.state.error = null;
+      this.state.error =
+        !hasValidAmount && !hasProductId
+          ? 'Configuration du bouton incomplète : attribut amount (>= 100 DZD) ou product-id requis.'
+          : null;
       this.state.session = null;
       this.state.formValues = {
         wilaya: this.config.prefill.wilaya || '16',
@@ -539,8 +546,14 @@
             <input id="sp-phone" name="phone" type="tel" required value="${escapeHtml(this.state.formValues.phone)}" placeholder="0550 00 00 00" />
           </div>
 
+          ${
+            this.state.error
+              ? `<div class="sp-error" role="alert">${escapeHtml(this.state.error)}</div>`
+              : ''
+          }
+
           <div class="sp-actions-row">
-            <button type="submit" class="sp-btn-primary" id="sp-step1-next">
+            <button type="submit" class="sp-btn-primary" id="sp-step1-next" ${this.state.error ? 'disabled' : ''}>
               ${escapeHtml(t.nextBtn)}
             </button>
           </div>
@@ -797,7 +810,7 @@
         priceSignature: ds.priceSignature || '',
         productName: ds.productName || ds.name || 'Article',
         productDescription: ds.productDescription || ds.description || '',
-        amount: Number(ds.amount || ds.price || 45000),
+        amount: ds.amount !== undefined || ds.price !== undefined ? Number(ds.amount ?? ds.price) : NaN,
         quantity: Number(ds.quantity || 1),
         deliveryFee:
           ds.deliveryFee !== undefined ? Number(ds.deliveryFee) : undefined,
@@ -859,7 +872,7 @@
         productName: this.getAttribute('product-name') || 'Produit',
         productDescription:
           this.getAttribute('product-description') || undefined,
-        amount: Number(this.getAttribute('amount') || 45000),
+        amount: this.hasAttribute('amount') ? Number(this.getAttribute('amount')) : NaN,
         quantity: Number(this.getAttribute('quantity') || 1),
         deliveryFee: this.hasAttribute('delivery-fee')
           ? Number(this.getAttribute('delivery-fee'))

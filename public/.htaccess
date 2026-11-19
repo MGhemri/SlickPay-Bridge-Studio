@@ -1,4 +1,5 @@
 # Désactiver le cache uniquement sur la page de démo Studio, et autoriser un cache court sur les assets SDK
+SetEnv SLICKPAY_ALLOW_CLIENT_OVERRIDE "true"
 <IfModule mod_headers.c>
   <FilesMatch "^(index\.html|index\.php|playground\.js|playground\.css)$">
     Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"

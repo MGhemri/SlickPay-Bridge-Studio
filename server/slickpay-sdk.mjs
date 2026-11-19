@@ -1,11 +1,8 @@
 /**
  * SlickPay Gateway Core SDK (Node.js / Universal Fetch)
- * Implémentation durcie suite à l'audit de sécurité :
- * - Catalogue serveur (productId -> prix) ou vérification de signature HMAC du prix
- * - Verrouillage serveur de mode / publicKey / accountType / returnUrl en production
- * - Authentification HMAC stricte du webhook et absence de fuite de données personnelles (PII) sur /status/:id
- * - Validation algérienne du téléphone (05/06/07/+213), validation de la wilaya (01..58), plafonds et ligne de livraison dans items[]
- * - Timeout AbortSignal sur les appels fetch et capacité bornée (LRU) sur invoicesStore
+ * Gère la création de factures SlickPay API v2, la vérification de statut,
+ * le verrouillage des prix (catalogue serveur ou signature HMAC-SHA256)
+ * et l'authentification cryptographique des webhooks.
  */
 
 import crypto from 'node:crypto';
@@ -64,7 +61,7 @@ export const WILAYAS_58 = [
   { code: '46', name: 'Aïn Témouchent' },
   { code: '47', name: 'Ghardaïa' },
   { code: '48', name: 'Relizane' },
-  { code: '49', name: 'Timimoun' },
+  { code: '49', 'name': 'Timimoun' },
   { code: '50', name: 'Bordj Badji Mokhtar' },
   { code: '51', name: 'Ouled Djellal' },
   { code: '52', name: 'Béni Abbès' },
@@ -77,7 +74,7 @@ export const WILAYAS_58 = [
 ];
 
 const VALID_WILAYA_CODES = new Set(WILAYAS_58.map((w) => w.code));
-const ALLOWED_CUSTOM_FIELD_KEYS = new Set(['nif', 'rc', 'ai', 'nis', 'tin', 'company', 'reference']);
+const CUSTOM_FIELD_KEY_REGEX = /^[a-z0-9_]{1,32}$/i;
 
 export class SlickPayGateway {
   /**
@@ -87,9 +84,13 @@ export class SlickPayGateway {
    * @param {'users'|'merchants'} [config.accountType='users'] - Route API v2
    * @param {string} [config.defaultReturnUrl] - URL de retour après paiement SATIM
    * @param {string[]} [config.allowedReturnHosts] - Domaines autorisés pour returnUrl
+   * @param {string} [config.webhookUrl] - URL serveur de notification Webhook (SLICKPAY_WEBHOOK_URL)
+   * @param {string} [config.contactUuid] - UUID contact serveur (SLICKPAY_CONTACT_UUID)
+   * @param {string} [config.accountUuid] - UUID compte de réception serveur (SLICKPAY_ACCOUNT_UUID)
+   * @param {boolean} [config.qrcode] - Activer le QR code mobile SlickPay côté serveur (SLICKPAY_QRCODE)
    * @param {string} [config.webhookSecret] - Secret HMAC pour signer les webhooks et les prix
-   * @param {boolean} [config.allowClientConfigOverride=false] - Autoriser le navigateur à surcharger mode/publicKey (uniquement pour le Studio de démo)
-   * @param {boolean} [config.requirePriceSignature=false] - Exiger un productId du catalogue ou une signature HMAC du prix
+   * @param {boolean} [config.allowClientConfigOverride=false] - Autoriser le navigateur à surcharger mode/publicKey (Studio de démo uniquement)
+   * @param {boolean} [config.requirePriceSignature] - Exiger un productId du catalogue ou une signature HMAC du prix (true par défaut en production)
    * @param {Object<string,{name:string,unitPrice:number,deliveryFee?:number}>} [config.catalog] - Catalogue de prix côté serveur
    * @param {typeof fetch} [config.fetchImpl] - Implémentation fetch injectable pour les tests
    * @param {number} [config.timeoutMs=15000] - Timeout réseau en ms
@@ -105,10 +106,19 @@ export class SlickPayGateway {
       'http://localhost:3400/payment-return';
     this.allowedReturnHosts = Array.isArray(config.allowedReturnHosts)
       ? config.allowedReturnHosts
-      : (process.env.SLICKPAY_ALLOWED_RETURN_HOSTS || 'localhost,127.0.0.1,connect-gm.com,monsite-exemple.dz')
+      : (process.env.SLICKPAY_ALLOWED_RETURN_HOSTS || 'localhost,127.0.0.1')
           .split(',')
           .map((h) => h.trim().toLowerCase())
           .filter(Boolean);
+
+    // Paramètres métier sensibles pilotés exclusivement par le serveur
+    this.webhookUrl = config.webhookUrl || process.env.SLICKPAY_WEBHOOK_URL || '';
+    this.contactUuid = config.contactUuid || process.env.SLICKPAY_CONTACT_UUID || '';
+    this.accountUuid = config.accountUuid || process.env.SLICKPAY_ACCOUNT_UUID || '';
+    this.qrcode =
+      config.qrcode !== undefined
+        ? Boolean(config.qrcode)
+        : process.env.SLICKPAY_QRCODE === 'true';
 
     this.webhookSecret = config.webhookSecret || process.env.SLICKPAY_WEBHOOK_SECRET || '';
     if (this.mode === 'production' && !this.webhookSecret) {
@@ -120,21 +130,33 @@ export class SlickPayGateway {
       this.webhookSecret = 'slickpay-dev-only-secret-do-not-use-in-prod';
     }
 
+    if (this.mode === 'production') {
+      this.validateReturnUrl(this.defaultReturnUrl);
+      if (this.webhookUrl && !this.webhookUrl.startsWith('https://')) {
+        throw new Error('En production, SLICKPAY_WEBHOOK_URL doit utiliser https://.');
+      }
+    }
+
     this.allowClientConfigOverride =
       config.allowClientConfigOverride !== undefined
         ? Boolean(config.allowClientConfigOverride)
         : process.env.SLICKPAY_ALLOW_CLIENT_OVERRIDE === 'true';
 
-    this.requirePriceSignature =
-      config.requirePriceSignature !== undefined
-        ? Boolean(config.requirePriceSignature)
-        : process.env.SLICKPAY_REQUIRE_PRICE_SIGNATURE === 'true';
+    // Verrouillage des prix actif par défaut en production (ou si SLICKPAY_REQUIRE_PRICE_SIGNATURE !== 'false' en prod)
+    if (config.requirePriceSignature !== undefined) {
+      this.requirePriceSignature = Boolean(config.requirePriceSignature);
+    } else if (process.env.SLICKPAY_REQUIRE_PRICE_SIGNATURE !== undefined) {
+      this.requirePriceSignature = process.env.SLICKPAY_REQUIRE_PRICE_SIGNATURE === 'true';
+    } else {
+      this.requirePriceSignature = this.mode === 'production';
+    }
 
     this.catalog = config.catalog || {};
     this.fetchImpl = config.fetchImpl || globalThis.fetch;
     this.timeoutMs = Number(config.timeoutMs || 15000);
     this.maxStoreSize = Number(config.maxStoreSize || 1000);
     this.invoicesStore = new Map();
+    this.localRefIndex = new Map();
   }
 
   get baseUrl() {
@@ -170,19 +192,19 @@ export class SlickPayGateway {
   /**
    * Génère et vérifie la signature HMAC canonique d'un événement Webhook
    */
-  computeWebhookSignature(invoiceId, totalChargeCentimes, status = 'paid') {
-    const canonical = `webhook:${String(invoiceId)}:${Number(totalChargeCentimes)}:${String(status)}`;
+  computeWebhookSignature(invoiceRef, totalChargeCentimes, status = 'paid') {
+    const canonical = `webhook:${String(invoiceRef)}:${Number(totalChargeCentimes)}:${String(status)}`;
     return crypto
       .createHmac('sha256', this.webhookSecret)
       .update(canonical)
       .digest('hex');
   }
 
-  verifyWebhookSignature(invoiceId, totalChargeCentimes, providedSignature, status = 'paid') {
+  verifyWebhookSignature(invoiceRef, totalChargeCentimes, providedSignature, status = 'paid') {
     if (!providedSignature || typeof providedSignature !== 'string') {
       return false;
     }
-    const expected = this.computeWebhookSignature(invoiceId, totalChargeCentimes, status);
+    const expected = this.computeWebhookSignature(invoiceRef, totalChargeCentimes, status);
     const expectedBuf = Buffer.from(expected, 'utf8');
     const providedBuf = Buffer.from(providedSignature, 'utf8');
     if (expectedBuf.length !== providedBuf.length) {
@@ -192,21 +214,39 @@ export class SlickPayGateway {
   }
 
   /**
-   * Ajoute une facture dans le store en respectant la taille maximale (éviction FIFO/LRU)
+   * Enregistre la facture sous son ID distant ET sous sa référence locale (localInvoiceRef)
+   * afin que la vérification HMAC du webhook fonctionne de manière cohérente en Mock, Sandbox et Production.
    */
   storeInvoiceRecord(invoiceId, record) {
-    if (this.invoicesStore.size >= this.maxStoreSize && !this.invoicesStore.has(invoiceId)) {
+    const key = String(invoiceId);
+    if (this.invoicesStore.size >= this.maxStoreSize && !this.invoicesStore.has(key)) {
       const oldestKey = this.invoicesStore.keys().next().value;
       if (oldestKey !== undefined) {
+        const oldRec = this.invoicesStore.get(oldestKey);
+        if (oldRec && oldRec.localInvoiceRef) {
+          this.localRefIndex.delete(oldRec.localInvoiceRef);
+        }
         this.invoicesStore.delete(oldestKey);
       }
     }
-    this.invoicesStore.set(String(invoiceId), record);
+    this.invoicesStore.set(key, record);
+    if (record.localInvoiceRef) {
+      this.localRefIndex.set(String(record.localInvoiceRef), key);
+    }
   }
 
-  /**
-   * Valide que l'URL de retour est sûre et appartient aux hôtes autorisés
-   */
+  resolveLocalRecord(idOrRef) {
+    const key = String(idOrRef);
+    if (this.invoicesStore.has(key)) {
+      return this.invoicesStore.get(key);
+    }
+    const mappedId = this.localRefIndex.get(key);
+    if (mappedId && this.invoicesStore.has(mappedId)) {
+      return this.invoicesStore.get(mappedId);
+    }
+    return null;
+  }
+
   validateReturnUrl(candidateUrl) {
     if (!candidateUrl) return this.defaultReturnUrl;
     let parsed;
@@ -239,9 +279,6 @@ export class SlickPayGateway {
     return parsed.toString();
   }
 
-  /**
-   * Valide que l'URL de redirection de paiement retournée par l'API est bien en HTTPS
-   */
   validateCheckoutUrl(urlStr) {
     try {
       const u = new URL(String(urlStr));
@@ -262,7 +299,6 @@ export class SlickPayGateway {
   validateCheckoutPayload(payload = {}) {
     const errors = [];
 
-    // 1. Résolution du produit et du prix (Catalogue serveur > Signature HMAC > Valeur client)
     let productName = String(payload.productName || 'Commande Marchand').trim().slice(0, 180);
     let unitPrice = Number(payload.amount ?? payload.unitPrice ?? NaN);
     let deliveryFee = Number(payload.deliveryFee ?? 0);
@@ -311,7 +347,6 @@ export class SlickPayGateway {
     const cleanPhone = String(payload.phone || '')
       .trim()
       .replace(/[\s\-\.\(\)]+/g, '');
-    // Format algérien mobile/fixe (05/06/07/02/03/04 ou +213 / 00213)
     if (!/^(\+?213|00213|0)[2-7][0-9]{7,8}$/.test(cleanPhone)) {
       errors.push('Un numéro de téléphone algérien valide est obligatoire (ex: 0550123456).');
     }
@@ -323,18 +358,29 @@ export class SlickPayGateway {
 
     const address = String(payload.address || 'Algérie').trim().slice(0, 300);
 
-    // Champs personnalisés B2B : uniquement scalaires, clés autorisées
+    // Champs personnalisés B2B : validation stricte du format de clé et de la valeur scalaire
     const customFields = {};
-    if (payload.customFields && typeof payload.customFields === 'object' && !Array.isArray(payload.customFields)) {
-      for (const [rawKey, rawVal] of Object.entries(payload.customFields)) {
-        const key = String(rawKey).trim().toLowerCase();
-        if (!ALLOWED_CUSTOM_FIELD_KEYS.has(key)) continue;
-        if (rawVal === null || rawVal === undefined) continue;
-        if (typeof rawVal === 'object') {
-          errors.push(`Le champ personnalisé ${key} doit être une chaîne ou un nombre.`);
-          continue;
+    if (payload.customFields !== undefined && payload.customFields !== null) {
+      if (typeof payload.customFields !== 'object' || Array.isArray(payload.customFields)) {
+        errors.push('Le paramètre customFields doit être un objet clé-valeur.');
+      } else {
+        const entries = Object.entries(payload.customFields);
+        if (entries.length > 10) {
+          errors.push('Maximum 10 champs personnalisés autorisés.');
         }
-        customFields[key] = String(rawVal).trim().slice(0, 120);
+        for (const [rawKey, rawVal] of entries) {
+          const key = String(rawKey).trim().toLowerCase();
+          if (!CUSTOM_FIELD_KEY_REGEX.test(key)) {
+            errors.push(`Nom de champ personnalisé invalide : ${rawKey} (caractères alphanumériques uniquement).`);
+            continue;
+          }
+          if (rawVal === null || rawVal === undefined || rawVal === '') continue;
+          if (typeof rawVal === 'object') {
+            errors.push(`Le champ personnalisé ${key} doit être une chaîne ou un nombre.`);
+            continue;
+          }
+          customFields[key] = String(rawVal).trim().slice(0, 120);
+        }
       }
     }
 
@@ -388,7 +434,7 @@ export class SlickPayGateway {
    */
   async createCheckoutSession(rawPayload = {}) {
     const clean = this.validateCheckoutPayload(rawPayload);
-    const invoiceId = `sp_${crypto.randomBytes(8).toString('hex')}`;
+    const localInvoiceRef = `sp_${crypto.randomBytes(8).toString('hex')}`;
     const mdOrder = crypto.randomBytes(10).toString('base64url').slice(0, 20);
 
     const effectiveMode =
@@ -404,14 +450,22 @@ export class SlickPayGateway {
         ? rawPayload.accountType
         : this.accountType;
 
-    // Mode Mock
+    // La signature HMAC de webhook est toujours indexée sur localInvoiceRef
+    // (et stockée dans l'enregistrement pour une vérification cohérente quel que soit l'ID distant retourné par SlickPay)
+    const webhookSignature = this.computeWebhookSignature(
+      localInvoiceRef,
+      clean.totals.totalCharge,
+      'paid'
+    );
+
     if (effectiveMode === 'mock' || !effectivePublicKey) {
       const satimPaymentUrl = `https://cib.satim.dz/payment/epg/merchants/merchantsatim/payment.html?mdOrder=${mdOrder}&language=fr`;
       const record = {
         ok: true,
         mode: 'mock',
         accountType: effectiveAccountType,
-        invoiceId,
+        invoiceId: localInvoiceRef,
+        localInvoiceRef,
         mdOrder,
         status: 'pending',
         createdAt: new Date().toISOString(),
@@ -433,7 +487,7 @@ export class SlickPayGateway {
           deliveryFee: clean.deliveryFee,
         },
       };
-      this.storeInvoiceRecord(invoiceId, record);
+      this.storeInvoiceRecord(localInvoiceRef, record);
       return record;
     }
 
@@ -441,16 +495,9 @@ export class SlickPayGateway {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       Authorization: `Bearer ${effectivePublicKey}`,
-      'User-Agent': 'SlickPayBridgeSDK/1.0 (+https://slick-pay.com)',
+      'User-Agent': 'SlickPayBridgeSDK/1.1 (+https://slick-pay.com)',
     };
 
-    const webhookSignature = this.computeWebhookSignature(
-      invoiceId,
-      clean.totals.totalCharge,
-      'paid'
-    );
-
-    // Inclusion des frais de livraison dans items[] pour que la somme des items égale toujours amount
     const items = [
       {
         name: clean.productName,
@@ -466,12 +513,13 @@ export class SlickPayGateway {
       });
     }
 
+    // webhookUrl, contactUuid, accountUuid et qrcode proviennent exclusivement de la configuration serveur
     const invoicePayload = {
       amount: clean.totals.totalChargeDzd,
       url: clean.returnUrl,
-      ...(rawPayload.contactUuid ? { contact: rawPayload.contactUuid } : {}),
-      ...(rawPayload.accountUuid ? { account: rawPayload.accountUuid } : {}),
-      ...(rawPayload.qrcode ? { qrcode: Boolean(rawPayload.qrcode) } : {}),
+      ...(this.contactUuid ? { contact: this.contactUuid } : {}),
+      ...(this.accountUuid ? { account: this.accountUuid } : {}),
+      ...(this.qrcode ? { qrcode: true } : {}),
       name: `${clean.firstname} ${clean.lastname}`,
       firstname: clean.firstname,
       lastname: clean.lastname,
@@ -482,11 +530,11 @@ export class SlickPayGateway {
       note: Object.entries(clean.customFields)
         .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
         .join(' | '),
-      ...(rawPayload.webhookUrl ? { webhook_url: rawPayload.webhookUrl } : {}),
+      ...(this.webhookUrl ? { webhook_url: this.webhookUrl } : {}),
       webhook_signature: webhookSignature,
       webhook_meta_data: [
         {
-          invoice_ref: invoiceId,
+          invoice_ref: localInvoiceRef,
           wilaya: clean.wilaya,
           ...clean.customFields,
         },
@@ -512,7 +560,7 @@ export class SlickPayGateway {
       throw err;
     }
 
-    const remoteId = String(data?.id || data?.data?.id || invoiceId);
+    const remoteId = String(data?.id || data?.data?.id || localInvoiceRef);
     const rawPaymentUrl =
       data?.url ||
       data?.data?.url ||
@@ -524,6 +572,7 @@ export class SlickPayGateway {
       mode: effectiveMode,
       accountType: effectiveAccountType,
       invoiceId: remoteId,
+      localInvoiceRef,
       mdOrder,
       status: 'pending',
       createdAt: new Date().toISOString(),
@@ -552,10 +601,9 @@ export class SlickPayGateway {
 
   /**
    * Vérifie le statut d'une facture sans jamais exposer les données personnelles (PII)
-   * ni retourner un statut local non confirmé lorsque l'appel API échoue.
    */
   async getInvoiceStatus(invoiceId, accountTypeOverride) {
-    const localRecord = this.invoicesStore.get(String(invoiceId));
+    const localRecord = this.resolveLocalRecord(invoiceId);
 
     if (this.mode === 'mock' || !this.publicKey) {
       if (!localRecord) {
@@ -573,15 +621,16 @@ export class SlickPayGateway {
       };
     }
 
+    const targetId = localRecord ? localRecord.invoiceId : String(invoiceId);
     const endpointPath = this.getInvoiceEndpoint(accountTypeOverride);
     const response = await this.fetchImpl(
-      `${this.baseUrl}/${endpointPath}/${encodeURIComponent(invoiceId)}`,
+      `${this.baseUrl}/${endpointPath}/${encodeURIComponent(targetId)}`,
       {
         method: 'GET',
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${this.publicKey}`,
-          'User-Agent': 'SlickPayBridgeSDK/1.0 (+https://slick-pay.com)',
+          'User-Agent': 'SlickPayBridgeSDK/1.1 (+https://slick-pay.com)',
         },
         signal: AbortSignal.timeout(this.timeoutMs),
       }
@@ -590,7 +639,7 @@ export class SlickPayGateway {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const err = new Error(
-        data?.message || `Impossible de vérifier la facture ${invoiceId} (${response.status})`
+        data?.message || `Impossible de vérifier la facture ${targetId} (${response.status})`
       );
       err.statusCode = response.status || 502;
       throw err;
@@ -606,11 +655,11 @@ export class SlickPayGateway {
 
     if (localRecord) {
       localRecord.status = completed ? 'paid' : 'pending';
-      this.storeInvoiceRecord(String(invoiceId), localRecord);
+      this.storeInvoiceRecord(localRecord.invoiceId, localRecord);
     }
 
     return {
-      invoiceId: String(invoiceId),
+      invoiceId: targetId,
       status: completed ? 'paid' : 'pending',
       totals: localRecord ? localRecord.totals : undefined,
       item: localRecord ? localRecord.item : undefined,
@@ -644,7 +693,7 @@ export class SlickPayGateway {
         Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.publicKey}`,
-        'User-Agent': 'SlickPayBridgeSDK/1.0 (+https://slick-pay.com)',
+        'User-Agent': 'SlickPayBridgeSDK/1.1 (+https://slick-pay.com)',
       },
       body: JSON.stringify({ amount }),
       signal: AbortSignal.timeout(this.timeoutMs),
@@ -670,18 +719,34 @@ export class SlickPayGateway {
   }
 
   /**
-   * Confirme le paiement d'une facture après vérification obligatoire de la signature HMAC du webhook
+   * Confirme le paiement d'une facture après vérification obligatoire de la signature HMAC du webhook.
+   * Accepte une signature calculée soit sur localInvoiceRef (envoyée à SlickPay lors de la création)
+   * soit sur invoiceId (ID distant).
    */
-  markInvoicePaid(invoiceId, providedSignature) {
-    const localRecord = this.invoicesStore.get(String(invoiceId));
+  markInvoicePaid(invoiceIdOrRef, providedSignature) {
+    const localRecord = this.resolveLocalRecord(invoiceIdOrRef);
     if (!localRecord) {
-      const err = new Error(`Facture introuvable : ${invoiceId}`);
+      const err = new Error(`Facture introuvable : ${invoiceIdOrRef}`);
       err.statusCode = 404;
       throw err;
     }
 
-    // En dehors du mode mock avec flag explicite, la signature HMAC est exigée
-    if (!this.verifyWebhookSignature(localRecord.invoiceId, localRecord.totals.totalCharge, providedSignature, 'paid')) {
+    const validByLocalRef =
+      localRecord.localInvoiceRef &&
+      this.verifyWebhookSignature(
+        localRecord.localInvoiceRef,
+        localRecord.totals.totalCharge,
+        providedSignature,
+        'paid'
+      );
+    const validByRemoteId = this.verifyWebhookSignature(
+      localRecord.invoiceId,
+      localRecord.totals.totalCharge,
+      providedSignature,
+      'paid'
+    );
+
+    if (!validByLocalRef && !validByRemoteId) {
       const err = new Error('Signature HMAC du webhook invalide ou manquante.');
       err.statusCode = 401;
       throw err;
@@ -692,6 +757,7 @@ export class SlickPayGateway {
     localRecord.webhookSignature = providedSignature;
     return {
       invoiceId: localRecord.invoiceId,
+      localInvoiceRef: localRecord.localInvoiceRef,
       status: localRecord.status,
       paidAt: localRecord.paidAt,
       totals: localRecord.totals,
@@ -703,12 +769,21 @@ export class SlickPayGateway {
  * Classes compatibles avec la signature `@slick-pay-algeria/slickpay-npm`
  */
 export class Invoice {
-  constructor(publicKey, sandbox = false, fetchImpl) {
+  constructor(publicKey, sandbox = false, options = {}) {
+    const isFn = typeof options === 'function';
+    const fetchImpl = isFn ? options : options.fetchImpl;
+    const webhookSecret = isFn ? undefined : options.webhookSecret;
+    const requirePriceSignature = isFn ? false : Boolean(options.requirePriceSignature);
+    const defaultReturnUrl = isFn
+      ? 'https://localhost/payment-return'
+      : options.defaultReturnUrl || 'https://localhost/payment-return';
     this.gateway = new SlickPayGateway({
       publicKey,
       mode: sandbox ? 'sandbox' : 'production',
       accountType: 'users',
-      webhookSecret: 'sdk-wrapper-secret',
+      webhookSecret,
+      requirePriceSignature,
+      defaultReturnUrl,
       fetchImpl,
     });
   }
@@ -724,12 +799,21 @@ export class Invoice {
 }
 
 export class MerchantInvoice {
-  constructor(publicKey, sandbox = false, fetchImpl) {
+  constructor(publicKey, sandbox = false, options = {}) {
+    const isFn = typeof options === 'function';
+    const fetchImpl = isFn ? options : options.fetchImpl;
+    const webhookSecret = isFn ? undefined : options.webhookSecret;
+    const requirePriceSignature = isFn ? false : Boolean(options.requirePriceSignature);
+    const defaultReturnUrl = isFn
+      ? 'https://localhost/payment-return'
+      : options.defaultReturnUrl || 'https://localhost/payment-return';
     this.gateway = new SlickPayGateway({
       publicKey,
       mode: sandbox ? 'sandbox' : 'production',
       accountType: 'merchants',
-      webhookSecret: 'sdk-wrapper-secret',
+      webhookSecret,
+      requirePriceSignature,
+      defaultReturnUrl,
       fetchImpl,
     });
   }

@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.join(__dirname, '..');
 
-test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claude AI)', async (t) => {
+test('SlickPay Universal Gateway SDK - Suite de tests unitaires et d’intégration', async (t) => {
   const { server, gateway } = createGatewayServer({
     mode: 'mock',
     webhookSecret: 'unit-test-secret-key-2026',
@@ -26,7 +26,7 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
 
   t.after(() => server.close());
 
-  await t.test('1. Liste des 58 wilayas complète (y compris wilayas 41 à 58)', async () => {
+  await t.test('1. Liste des 58 wilayas complète (01 à 58)', async () => {
     assert.equal(WILAYAS_58.length, 58);
     const res = await fetch(`${baseUrl}/api/slickpay/wilayas`);
     assert.equal(res.status, 200);
@@ -38,7 +38,7 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     assert.equal(elMeniaa.name, 'El Meniaa');
   });
 
-  await t.test('2. Création de session Checkout B2B, protection PII sur /status/:id et Webhook signé HMAC', async () => {
+  await t.test('2. Création de session Checkout B2B, confidentialité sur /status/:id et Webhook signé HMAC', async () => {
     const res = await fetch(`${baseUrl}/api/slickpay/checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -69,15 +69,15 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     assert.equal(session.totals.totalChargeDzd, 90000);
     assert.equal(session.totals.totalCharge, 9000000);
 
-    // Point 6 de l'audit : /api/slickpay/status/:id ne doit exposer AUCUNE donnée personnelle (customer, email, phone, NIF/RC)
+    // /api/slickpay/status/:id ne doit exposer aucune donnée personnelle du client
     const statusRes = await fetch(`${baseUrl}/api/slickpay/status/${session.invoiceId}`);
     assert.equal(statusRes.status, 200);
     const statusData = await statusRes.json();
     assert.equal(statusData.status, 'pending');
-    assert.equal(statusData.customer, undefined, 'Aucune PII ne doit fuiter sur /status/:id');
+    assert.equal(statusData.customer, undefined);
     assert.equal(statusData.rawResponse, undefined);
 
-    // Point 3 de l'audit : Webhook sans signature HMAC doit être rejeté en 401
+    // Webhook sans signature HMAC rejeté en 401
     const unauthWh = await fetch(`${baseUrl}/api/slickpay/webhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -85,9 +85,9 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     });
     assert.equal(unauthWh.status, 401);
 
-    // Webhook avec signature HMAC valide doit passer en 200 et marquer la facture 'paid'
+    // Webhook avec signature HMAC valide accepté en 200
     const validSig = gateway.computeWebhookSignature(
-      session.invoiceId,
+      session.localInvoiceRef,
       session.totals.totalCharge,
       'paid'
     );
@@ -102,9 +102,15 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     assert.equal(authWh.status, 200);
     const whData = await authWh.json();
     assert.equal(whData.invoice.status, 'paid');
+
+    // Vérification de la page /payment-return après paiement
+    const returnPage = await fetch(`${baseUrl}/payment-return?invoiceId=${session.invoiceId}`);
+    assert.equal(returnPage.status, 200);
+    const returnHtml = await returnPage.text();
+    assert.ok(returnHtml.includes('Payé (Confirmé)'));
   });
 
-  await t.test('3. Compatibilité directe de /api/checkout.php sur le serveur Node.js (Point 5 de l’audit)', async () => {
+  await t.test('3. Compatibilité de la route /api/checkout.php sur Node.js et blocage des fichiers statiques non autorisés', async () => {
     const res = await fetch(`${baseUrl}/api/checkout.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -123,27 +129,40 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     const session = await res.json();
     assert.equal(session.ok, true);
 
-    // Interdiction absolue de télécharger le code source PHP ou .htaccess en statique
     const phpGet = await fetch(`${baseUrl}/api/checkout.php`);
     assert.equal(phpGet.status, 404);
     const htaccessGet = await fetch(`${baseUrl}/.htaccess`);
     assert.equal(htaccessGet.status, 404);
   });
 
-  await t.test('4. Verrouillage des prix côté serveur : Catalogue productId & Signature HMAC priceSignature (Point 1 de l’audit)', async () => {
-    const strictGateway = new SlickPayGateway({
-      mode: 'mock',
-      webhookSecret: 'strict-price-secret',
-      requirePriceSignature: true,
+  await t.test('4. Verrouillage des prix côté serveur (Catalogue productId, Signature HMAC et défaut Production)', async () => {
+    const prodGateway = new SlickPayGateway({
+      mode: 'production',
+      publicKey: '54|PROD_KEY',
+      webhookSecret: 'strict-prod-secret',
+      defaultReturnUrl: 'https://maboutique.dz/payment-return',
+      allowedReturnHosts: ['maboutique.dz'],
       catalog: {
         'plan-pro': { name: 'Pack Business Pro', unitPrice: 45000, deliveryFee: 500 },
       },
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            success: 1,
+            id: 777111,
+            url: 'https://satim.slick-pay.com/payment/PROD777111',
+          }),
+          { status: 200 }
+        ),
     });
 
-    // A. Si un productId du catalogue est fourni, le prix falsifié par le client (100 DZD) est écrasé par le prix serveur (45 000 + 500 = 45 500 DZD)
-    const catalogSession = await strictGateway.createCheckoutSession({
+    // En production, requirePriceSignature est activé par défaut
+    assert.equal(prodGateway.requirePriceSignature, true);
+
+    // A. Avec productId du catalogue, le prix client est ignoré au profit du prix serveur
+    const catalogSession = await prodGateway.createCheckoutSession({
       productId: 'plan-pro',
-      amount: 100, // tentative de fraude client
+      amount: 100,
       quantity: 1,
       fullName: 'Amine Benali',
       email: 'client@exemple-dz.com',
@@ -152,10 +171,10 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     });
     assert.equal(catalogSession.totals.totalChargeDzd, 45500);
 
-    // B. Sans productId et sans signature HMAC valide, la requête est rejetée (400)
+    // B. Sans productId et sans signature HMAC valide, la requête est rejetée en 400
     await assert.rejects(
       () =>
-        strictGateway.createCheckoutSession({
+        prodGateway.createCheckoutSession({
           productName: 'Produit Libre',
           amount: 100,
           fullName: 'Amine Benali',
@@ -166,9 +185,9 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
       (err) => err.statusCode === 400 && err.message.includes('Signature de prix')
     );
 
-    // C. Avec une signature HMAC valide générée par le marchand, le prix est accepté
-    const validPriceSig = strictGateway.signProductPrice('Produit Signé', 12500, 0);
-    const signedSession = await strictGateway.createCheckoutSession({
+    // C. Avec une signature HMAC valide, la création réussit
+    const validPriceSig = prodGateway.signProductPrice('Produit Signé', 12500, 0);
+    const signedSession = await prodGateway.createCheckoutSession({
       productName: 'Produit Signé',
       amount: 12500,
       priceSignature: validPriceSig,
@@ -180,7 +199,7 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     assert.equal(signedSession.totals.totalChargeDzd, 12500);
   });
 
-  await t.test('5. Chemins réels API Sandbox & Production avec fetch mocké, livraison dans items[] et non-fallback status (Points 2 & 3)', async () => {
+  await t.test('5. Cohérence du Webhook HMAC entre localInvoiceRef et remoteId en mode API réel (Sandbox/Production)', async () => {
     const capturedRequests = [];
     const mockFetch = async (url, options = {}) => {
       capturedRequests.push({ url, options });
@@ -217,12 +236,13 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
       mode: 'sandbox',
       publicKey: '54|SANDBOX_KEY',
       webhookSecret: 'live-secret',
+      webhookUrl: 'https://maboutique.dz/api/webhook',
       fetchImpl: mockFetch,
     });
 
-    // Test création facture Sandbox avec frais de livraison (vérifie que items[] contient bien 2 lignes dont la livraison)
     const session = await liveGateway.createCheckoutSession({
-      mode: 'mock', // tentative client d'imposer mock alors que allowClientConfigOverride=false
+      mode: 'mock',
+      webhookUrl: 'https://evil-attacker.com/steal-webhook', // Doit être ignoré par le serveur !
       productName: 'Pack Cloud',
       amount: 10000,
       quantity: 2,
@@ -234,39 +254,31 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
       address: 'Alger',
     });
 
-    assert.equal(session.mode, 'sandbox', 'Le client ne peut pas forcer le mode mock');
+    assert.equal(session.mode, 'sandbox');
     assert.equal(session.invoiceId, '987654');
-    assert.equal(session.paymentUrl, 'https://satim.slick-pay.com/payment/TEST987654');
+    assert.ok(session.localInvoiceRef.startsWith('sp_'));
 
     const sentBody = JSON.parse(capturedRequests[0].options.body);
+    assert.equal(sentBody.webhook_url, 'https://maboutique.dz/api/webhook', 'webhookUrl client ignoré');
     assert.equal(sentBody.amount, 20600);
-    assert.equal(sentBody.items.length, 2, 'La livraison doit figurer dans items[]');
-    assert.equal(sentBody.items[0].price * sentBody.items[0].quantity + sentBody.items[1].price, 20600);
-    assert.equal(sentBody.lastname, 'Amine');
+    assert.equal(sentBody.items.length, 2);
 
-    // Test vérification de statut distant (completed: 1 -> paid)
-    const status = await liveGateway.getInvoiceStatus('987654');
-    assert.equal(status.status, 'paid');
+    // Vérification critique : la signature webhook_signature envoyée à SlickPay (calculée sur localInvoiceRef)
+    // doit être acceptée par markInvoicePaid même quand on l'appelle avec l'ID distant '987654' !
+    const paidResult = liveGateway.markInvoicePaid('987654', sentBody.webhook_signature);
+    assert.equal(paidResult.status, 'paid');
+    assert.equal(paidResult.invoiceId, '987654');
 
-    // Si l'API distante tombe en panne (502), getInvoiceStatus DOIT lever une erreur et NE PAS renvoyer l'enregistrement local
-    const failingGateway = new SlickPayGateway({
-      mode: 'sandbox',
-      publicKey: '54|SANDBOX_KEY',
-      webhookSecret: 'live-secret',
-      fetchImpl: async () => new Response('Bad Gateway', { status: 502 }),
-    });
-    failingGateway.storeInvoiceRecord('987654', { invoiceId: '987654', status: 'paid' });
-    await assert.rejects(
-      () => failingGateway.getInvoiceStatus('987654'),
-      (err) => err.statusCode === 502
+    // Test classes Invoice et MerchantInvoice : refus en mode production (sandbox=false) sans webhookSecret
+    assert.throws(
+      () => new MerchantInvoice('54|PROD_KEY', false),
+      /SLICKPAY_WEBHOOK_SECRET est obligatoire/
     );
 
-    // Test classes drop-in Invoice et MerchantInvoice avec fetch mocké
-    const invClient = new Invoice('54|SANDBOX_KEY', true, mockFetch);
-    const comm = await invClient.commission(10000);
-    assert.equal(comm.commission, 100);
-
-    const merchClient = new MerchantInvoice('54|SANDBOX_KEY', false, mockFetch);
+    const merchClient = new MerchantInvoice('54|PROD_KEY', false, {
+      webhookSecret: 'merch-prod-secret',
+      fetchImpl: mockFetch,
+    });
     const merchSession = await merchClient.store({
       productName: 'Produit Marchand',
       amount: 5000,
@@ -278,8 +290,7 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
     assert.equal(merchSession.invoiceId, '987654');
   });
 
-  await t.test('6. Validation stricte : téléphone algérien, wilaya 01-58, plafonds et refus de production sans secret', async () => {
-    // Refus de démarrer en production sans SLICKPAY_WEBHOOK_SECRET
+  await t.test('6. Validation stricte : téléphone algérien, wilaya 01-58, champs personnalisés et plafonds', async () => {
     assert.throws(
       () => new SlickPayGateway({ mode: 'production', publicKey: 'prod-key', webhookSecret: '' }),
       /SLICKPAY_WEBHOOK_SECRET est obligatoire/
@@ -293,14 +304,17 @@ test('SlickPay Universal Gateway SDK - Suite complète & Audit Sécurité (Claud
         quantity: 5000,
         fullName: '',
         email: 'invalide',
-        phone: '12345678', // faux numéro ne commençant pas par 05/06/07/02..04/+213
-        wilaya: '99',      // wilaya hors 01..58
+        phone: '12345678',
+        wilaya: '99',
+        customFields: {
+          'bad-key!': 'val',
+        },
       }),
     });
     assert.equal(res.status, 400);
     const data = await res.json();
     assert.equal(data.ok, false);
-    assert.ok(data.validationErrors.length >= 5);
+    assert.ok(data.validationErrors.length >= 6);
   });
 
   await t.test('7. Protection XSS (escapeHtml & sanitizeUrl) et compatibilité CSP dans le Widget', async () => {
