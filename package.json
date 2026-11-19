@@ -1,9 +1,33 @@
 {
-  "name": "slickpay-gateway-sdk",
+  "name": "@mghemri/slickpay-bridge-studio",
   "version": "1.0.0",
-  "description": "Passerelle & Widget Universel SlickPay (CIB / Edahabia / SATIM) facile à intégrer pour les développeurs web",
+  "description": "Passerelle & Studio Générateur d'Intégration Multi-Produits pour SlickPay (CIB / Edahabia / SATIM) style Stripe Checkout en 3 étapes",
   "type": "module",
-  "main": "server/index.mjs",
+  "main": "server/slickpay-sdk.mjs",
+  "exports": {
+    ".": "./server/slickpay-sdk.mjs",
+    "./server": "./server/index.mjs",
+    "./widget": "./public/sdk/slickpay-widget.js",
+    "./widget.css": "./public/sdk/slickpay-widget.css"
+  },
+  "files": [
+    "server/",
+    "public/sdk/",
+    "public/api/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MGhemri/SlickPay-Bridge-Studio.git"
+  },
+  "homepage": "https://connect-gm.com/slickpay-test/",
+  "bugs": {
+    "url": "https://github.com/MGhemri/SlickPay-Bridge-Studio/issues"
+  },
   "scripts": {
     "start": "node server/index.mjs",
     "test": "node --test test/gateway.test.mjs"
@@ -15,7 +39,8 @@
     "edahabia",
     "algeria",
     "payment-gateway",
-    "web-component"
+    "web-component",
+    "stripe-checkout"
   ],
   "author": "GHEMRI M <contact@connect-gm.com> (https://connect-gm.com)",
   "license": "SEE LICENSE IN LICENSE"
