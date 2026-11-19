@@ -1,6 +1,6 @@
 {
   "name": "@mghemri/slickpay-bridge-studio",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Passerelle & Studio Générateur d'Intégration Multi-Produits pour SlickPay (CIB / Edahabia / SATIM) style Stripe Checkout en 3 étapes",
   "type": "module",
   "main": "server/slickpay-sdk.mjs",
