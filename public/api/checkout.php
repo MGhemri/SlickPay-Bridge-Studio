@@ -90,8 +90,16 @@ if ($rawBody !== false && strlen($rawBody) > 65536) {
 }
 $payload = $rawBody ? (json_decode($rawBody, true) ?: []) : [];
 
-// L'override client est strictement opt-in via SLICKPAY_ALLOW_CLIENT_OVERRIDE=true (et jamais implicite quand la clé est vide)
-$allowClientOverride = (getenv('SLICKPAY_ALLOW_CLIENT_OVERRIDE') === 'true');
+// Lecture optionnelle d'un fichier de configuration local (config.local.php) pour les hébergements cPanel sans mod_env
+$localConfigFile = __DIR__ . '/config.local.php';
+$localConfig = is_file($localConfigFile) ? (include $localConfigFile) : [];
+if (!is_array($localConfig)) {
+    $localConfig = [];
+}
+
+// L'override client est strictement opt-in via SLICKPAY_ALLOW_CLIENT_OVERRIDE=true ou config.local.php
+$allowClientOverride = (getenv('SLICKPAY_ALLOW_CLIENT_OVERRIDE') === 'true')
+    || (!empty($localConfig['allowClientOverride']));
 
 $action = $_GET['action'] ?? ($payload['action'] ?? 'checkout');
 $mode = ($allowClientOverride && !empty($payload['mode'])) ? (string)$payload['mode'] : $envMode;
@@ -373,8 +381,8 @@ if (!empty($errors)) {
 // URL de retour neutre basée sur l'hôte courant si SLICKPAY_RETURN_URL n'est pas configuré
 $currentHost = strtolower(preg_replace('/:[0-9]+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
 $currentScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-$defaultReturnUrl = getenv('SLICKPAY_RETURN_URL') ?: "{$currentScheme}://{$currentHost}/";
-$allowedReturnHostsEnv = getenv('SLICKPAY_ALLOWED_RETURN_HOSTS') ?: "{$currentHost},localhost,127.0.0.1";
+$defaultReturnUrl = getenv('SLICKPAY_RETURN_URL') ?: ($localConfig['returnUrl'] ?? "{$currentScheme}://{$currentHost}/");
+$allowedReturnHostsEnv = getenv('SLICKPAY_ALLOWED_RETURN_HOSTS') ?: ($localConfig['allowedReturnHosts'] ?? "{$currentHost},localhost,127.0.0.1");
 $allowedReturnHosts = array_values(array_filter(array_map('strtolower', array_map('trim', explode(',', $allowedReturnHostsEnv)))));
 
 $returnUrl = $defaultReturnUrl;
