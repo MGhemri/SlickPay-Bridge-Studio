@@ -4,7 +4,8 @@ Passerelle web et studio générateur d'intégration multi-produits pour SlickPa
 
 - Démo et générateur en ligne : [https://connect-gm.com/slickpay-test/](https://connect-gm.com/slickpay-test/)
 - Guide complet pas-à-pas pour les débutants et intégrateurs : [docs/GUIDE-UTILISATION.md](docs/GUIDE-UTILISATION.md)
-- Licence d'utilisation (Gratuit pour les développeurs / Usage commercial réglementé) : [LICENSE](LICENSE)
+- Politique de sécurité et garde-fous CI/CD : [SECURITY.md](SECURITY.md)
+- Licence d'utilisation (Gratuit pour le développeur sur ses propres projets / Usage commercial réglementé) : [LICENSE](LICENSE)
 
 ---
 

@@ -1,0 +1,78 @@
+name: CI & Quality Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    name: Node.js SDK & CSP Tests (${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Run unit, integration, CSP & license compliance tests
+        run: npm test
+
+      - name: Verify NPM package build (dry-run)
+        run: npm pack --dry-run
+
+  php-gateway-tests:
+    name: PHP cPanel Gateway Syntax & Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, json, mbstring
+
+      - name: Lint PHP files
+        run: |
+          php -l public/api/checkout.php
+          php -l public/index.php
+
+      - name: Smoke test PHP gateway endpoint (Mock & Single-word name 422 fix)
+        run: |
+          php -S 127.0.0.1:8089 -t public >/dev/null 2>&1 &
+          PHP_PID=$!
+          sleep 1
+          RESPONSE=$(curl -s -X POST http://127.0.0.1:8089/api/checkout.php \
+            -H "Content-Type: application/json" \
+            -d '{"mode":"mock","productName":"Abonnement Starter","amount":4500,"quantity":1,"wilaya":"16","address":"Alger","fullName":"Amine","email":"client@exemple-dz.com","phone":"0550 12 34 56"}')
+          echo "$RESPONSE" | grep -q '"ok":true'
+          echo "$RESPONSE" | grep -q '"lastname":"Amine"'
+          kill $PHP_PID || true
+
+  security-guard:
+    name: Secret & Credential Leak Guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for private tokens or credentials
+        run: |
+          if grep -RInE "(ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN [A-Z ]+ PRIVATE KEY-----)" --exclude-dir=.git .; then
+            echo "Error: Private token or key detected in repository!"
+            exit 1
+          fi
+          echo "No secret leaks found."
