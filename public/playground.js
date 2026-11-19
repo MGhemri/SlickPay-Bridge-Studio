@@ -1,16 +1,23 @@
 (function () {
   'use strict';
 
-  // État du catalogue de produits du développeur
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   let products = [
     { name: 'Abonnement Starter', desc: 'Licence mensuelle 1 poste', price: 4500 },
     { name: 'Pack Business Pro', desc: 'Licence annuelle multi-utilisateurs', price: 45000 },
     { name: 'Passerelle Cloud Enterprise', desc: 'Serveur dédié + Support 24/7', price: 120000 }
   ];
 
-  let activeCodeFormat = 'webcomponent'; // 'webcomponent' | 'dataattr' | 'js'
+  let activeCodeFormat = 'webcomponent';
 
-  // Références DOM
   const merchantInput = document.getElementById('cfg-merchant');
   const modeSelect = document.getElementById('cfg-mode');
   const accountSelect = document.getElementById('cfg-account-type');
@@ -47,7 +54,6 @@
     return new Intl.NumberFormat('fr-DZ').format(Number(val) || 0) + ' DZD';
   }
 
-  // 1. Appliquer la config globale à SlickPay.init(...)
   function syncGlobalBridge() {
     if (!window.SlickPay || typeof window.SlickPay.init !== 'function') return;
     window.SlickPay.init({
@@ -63,16 +69,15 @@
     });
   }
 
-  // 2. Rendu de l'éditeur de catalogue (Colonne gauche)
   function renderCatalogEditor() {
     catalogListEl.innerHTML = '';
     products.forEach(function (prod, idx) {
       const row = document.createElement('div');
       row.className = 'catalog-row';
       row.innerHTML =
-        '<input type="text" data-idx="' + idx + '" data-field="name" value="' + prod.name.replace(/"/g, '&quot;') + '" placeholder="Nom du produit" />' +
-        '<input type="text" data-idx="' + idx + '" data-field="desc" value="' + prod.desc.replace(/"/g, '&quot;') + '" placeholder="Description courte" />' +
-        '<input type="number" data-idx="' + idx + '" data-field="price" value="' + prod.price + '" min="100" step="100" placeholder="Prix DZD" />' +
+        '<input type="text" data-idx="' + idx + '" data-field="name" value="' + escapeHtml(prod.name) + '" placeholder="Nom du produit" />' +
+        '<input type="text" data-idx="' + idx + '" data-field="desc" value="' + escapeHtml(prod.desc) + '" placeholder="Description courte" />' +
+        '<input type="number" data-idx="' + idx + '" data-field="price" value="' + escapeHtml(prod.price) + '" min="100" step="100" placeholder="Prix DZD" />' +
         '<button type="button" class="btn-remove-prod" data-remove="' + idx + '" title="Supprimer">✕</button>';
       catalogListEl.appendChild(row);
     });
@@ -101,7 +106,6 @@
     });
   }
 
-  // 3. Mise à jour des blocs de code générés + Aperçu Boutique Multi-Produits
   function updateOutputAndPreview() {
     syncGlobalBridge();
 
@@ -114,7 +118,6 @@
     const returnUrl = returnUrlInput.value.trim();
     const customFields = getCustomFieldsArray();
 
-    // A. Code Global Unique (à mettre 1 seule fois dans <head> ou avant </body>)
     const initConfigObj = {
       endpoint: 'https://connect-gm.com/slickpay-test/api/checkout.php',
       merchantName: merchant,
@@ -134,7 +137,6 @@
       '  SlickPay.init(' + JSON.stringify(initConfigObj, null, 4) + ');\n' +
       '</script>';
 
-    // B. Code Multi-Produits selon l'onglet choisi
     if (activeCodeFormat === 'webcomponent') {
       productsCodeEl.textContent =
         '<!-- Placez ces balises sur chacune de vos fiches produits -->\n' +
@@ -142,9 +144,9 @@
           .map(function (p) {
             return (
               '<slickpay-button\n' +
-              '  product-name="' + p.name + '"\n' +
-              '  product-description="' + p.desc + '"\n' +
-              '  amount="' + p.price + '"\n' +
+              '  product-name="' + escapeHtml(p.name) + '"\n' +
+              '  product-description="' + escapeHtml(p.desc) + '"\n' +
+              '  amount="' + escapeHtml(p.price) + '"\n' +
               '></slickpay-button>'
             );
           })
@@ -158,9 +160,9 @@
               '<button\n' +
               '  class="mon-bouton-site"\n' +
               '  data-slickpay\n' +
-              '  data-product-name="' + p.name + '"\n' +
-              '  data-product-description="' + p.desc + '"\n' +
-              '  data-amount="' + p.price + '"\n' +
+              '  data-product-name="' + escapeHtml(p.name) + '"\n' +
+              '  data-product-description="' + escapeHtml(p.desc) + '"\n' +
+              '  data-amount="' + escapeHtml(p.price) + '"\n' +
               '>\n' +
               '  Acheter ' + p.name + ' (' + formatDzd(p.price) + ')\n' +
               '</button>'
@@ -174,54 +176,57 @@
         'SlickPay.openCheckout({\n' +
         '  productName: ' + JSON.stringify(sampleProd.name) + ',\n' +
         '  productDescription: ' + JSON.stringify(sampleProd.desc) + ',\n' +
-        '  amount: ' + sampleProd.price + ',\n' +
+        '  amount: ' + Number(sampleProd.price || 0) + ',\n' +
         '  quantity: 1,\n' +
         '  prefill: {\n' +
-        '    fullName: "Client Pré-rempli",\n' +
-        '    email: "client@domaine.dz",\n' +
+        '    fullName: "Amine Benali",\n' +
+        '    email: "client@exemple-dz.com",\n' +
         '    phone: "0550123456",\n' +
         '    wilaya: "16"\n' +
         '  }\n' +
         '});';
     }
 
-    // C. Rendu de l'aperçu Boutique Multi-Produits en direct
     previewGridEl.innerHTML = '';
     products.forEach(function (p) {
       const card = document.createElement('div');
       card.className = 'store-product-card';
 
+      const safeName = escapeHtml(p.name);
+      const safeDesc = escapeHtml(p.desc);
+      const safePrice = escapeHtml(p.price);
+      const formattedPrice = escapeHtml(formatDzd(p.price));
+
       if (activeCodeFormat === 'dataattr') {
         card.innerHTML =
           '<div>' +
-            '<h4 class="store-prod-name">' + p.name + '</h4>' +
-            '<p class="store-prod-desc">' + p.desc + '</p>' +
-            '<div class="store-prod-price">' + formatDzd(p.price) + '</div>' +
+            '<h4 class="store-prod-name">' + safeName + '</h4>' +
+            '<p class="store-prod-desc">' + safeDesc + '</p>' +
+            '<div class="store-prod-price">' + formattedPrice + '</div>' +
           '</div>' +
           '<button type="button" class="custom-html-btn" data-slickpay ' +
-            'data-product-name="' + p.name.replace(/"/g, '&quot;') + '" ' +
-            'data-product-description="' + p.desc.replace(/"/g, '&quot;') + '" ' +
-            'data-amount="' + p.price + '">' +
-            'Acheter (' + formatDzd(p.price) + ') →' +
+            'data-product-name="' + safeName + '" ' +
+            'data-product-description="' + safeDesc + '" ' +
+            'data-amount="' + safePrice + '">' +
+            'Acheter (' + formattedPrice + ') →' +
           '</button>';
       } else {
         card.innerHTML =
           '<div>' +
-            '<h4 class="store-prod-name">' + p.name + '</h4>' +
-            '<p class="store-prod-desc">' + p.desc + '</p>' +
-            '<div class="store-prod-price">' + formatDzd(p.price) + '</div>' +
+            '<h4 class="store-prod-name">' + safeName + '</h4>' +
+            '<p class="store-prod-desc">' + safeDesc + '</p>' +
+            '<div class="store-prod-price">' + formattedPrice + '</div>' +
           '</div>' +
           '<slickpay-button ' +
-            'product-name="' + p.name.replace(/"/g, '&quot;') + '" ' +
-            'product-description="' + p.desc.replace(/"/g, '&quot;') + '" ' +
-            'amount="' + p.price + '">' +
+            'product-name="' + safeName + '" ' +
+            'product-description="' + safeDesc + '" ' +
+            'amount="' + safePrice + '">' +
           '</slickpay-button>';
       }
       previewGridEl.appendChild(card);
     });
   }
 
-  // Écouteurs sur les champs de configuration globale
   [
     merchantInput,
     modeSelect,
@@ -251,7 +256,6 @@
     });
   }
 
-  // Onglets de format de code produit
   document.querySelectorAll('[data-tab-format]').forEach(function (tabBtn) {
     tabBtn.addEventListener('click', function () {
       document.querySelectorAll('[data-tab-format]').forEach(function (b) {
@@ -263,7 +267,6 @@
     });
   });
 
-  // Boutons Copier le code
   document.querySelectorAll('[data-copy-target]').forEach(function (copyBtn) {
     copyBtn.addEventListener('click', function () {
       const targetId = copyBtn.getAttribute('data-copy-target');
@@ -279,7 +282,6 @@
     });
   });
 
-  // Journal des événements de paiement
   window.addEventListener('slickpay:session-created', function (e) {
     if (logEl) {
       logEl.textContent = JSON.stringify(e.detail, null, 2);
@@ -292,7 +294,12 @@
     }
   });
 
-  // Initialisation au chargement
+  window.addEventListener('slickpay:status-checked', function (e) {
+    if (logEl) {
+      logEl.textContent = JSON.stringify(e.detail, null, 2);
+    }
+  });
+
   window.addEventListener('DOMContentLoaded', function () {
     renderCatalogEditor();
     updateOutputAndPreview();

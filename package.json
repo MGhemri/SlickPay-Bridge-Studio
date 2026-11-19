@@ -1,22 +1,25 @@
 {
   "name": "@mghemri/slickpay-bridge-studio",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Passerelle & Studio Générateur d'Intégration Multi-Produits pour SlickPay (CIB / Edahabia / SATIM) style Stripe Checkout en 3 étapes",
   "type": "module",
   "main": "server/slickpay-sdk.mjs",
   "exports": {
     ".": "./server/slickpay-sdk.mjs",
-    "./server": "./server/index.mjs",
-    "./widget": "./public/sdk/slickpay-widget.js",
-    "./widget.css": "./public/sdk/slickpay-widget.css"
+    "./server": "./server/index.mjs"
   },
+  "browser": "./public/sdk/slickpay-widget.js",
+  "style": "./public/sdk/slickpay-widget.css",
   "files": [
     "server/",
     "public/sdk/",
-    "public/api/",
     "README.md",
+    "SECURITY.md",
     "LICENSE"
   ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
@@ -30,7 +33,8 @@
   },
   "scripts": {
     "start": "node server/index.mjs",
-    "test": "node --test test/gateway.test.mjs"
+    "test": "node --test test/gateway.test.mjs",
+    "lint": "node --check server/slickpay-sdk.mjs && node --check server/index.mjs && node --check public/sdk/slickpay-widget.js && node --check public/playground.js && node --check test/gateway.test.mjs"
   },
   "keywords": [
     "slickpay",
