@@ -217,8 +217,14 @@ SlickPay-Bridge-Studio/
 
 ---
 
-## Licence
+## Licence et Contact Commercial
 
 Ce projet est distribué sous une licence spécifique (voir le fichier [LICENSE](LICENSE)) :
 - **Utilisation gratuite pour le développeur lui-même (usage propre uniquement)** : Tout développeur peut utiliser, modifier et intégrer gratuitement ce Bridge sur ses propres sites web et projets dont il est directement propriétaire.
 - **Restriction de commercialisation et prestations clients** : L'utilisation pour des clients tiers (prestations facturées, agences), la revente du logiciel en tant que plugin/service payant ou son exploitation commerciale au sein d'une plateforme de paiement sont interdites sans l'accord écrit préalable de l'auteur.
+
+Pour toute demande de licence commerciale, d'intégration pour vos clients ou de partenariat :
+- **Auteur** : GHEMRI M
+- **Téléphone** : 0549 77 73 66
+- **E-mail** : [contact@connect-gm.com](mailto:contact@connect-gm.com)
+- **Site web** : [https://connect-gm.com](https://connect-gm.com)
