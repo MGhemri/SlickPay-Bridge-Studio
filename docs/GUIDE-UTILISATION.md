@@ -99,3 +99,14 @@ La clé pré-remplie dans le générateur (`54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnB
 ### 2. Quelle est la différence entre `Standard (/api/v2/users/invoices)` et `Marchand (/api/v2/merchants/invoices)` ?
 - **`Standard (/api/v2/users/invoices)`** fonctionne immédiatement avec toutes les clés publiques SlickPay standards (Sandbox et Production). C'est l'option recommandée par défaut.
 - **`Marchand (/api/v2/merchants/invoices)`** correspond à la classe `MerchantInvoice` des SDKs SlickPay et exige que votre compte SlickPay ait un contrat TPV bancaire formellement rattaché côté SlickPay.
+
+---
+
+## Licence et Contact Commercial
+
+L'utilisation de ce Bridge est gratuite uniquement pour le développeur sur ses propres projets. Toute utilisation pour le compte de clients tiers ou commercialisation nécessite une licence commerciale :
+
+- **Auteur** : GHEMRI M
+- **Téléphone** : 0549 77 73 66
+- **E-mail** : [contact@connect-gm.com](mailto:contact@connect-gm.com)
+- **Site web** : [https://connect-gm.com](https://connect-gm.com)
