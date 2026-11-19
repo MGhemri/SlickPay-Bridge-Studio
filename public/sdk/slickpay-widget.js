@@ -2,20 +2,13 @@
  * SlickPay Universal Web Component & JS SDK (slickpay-widget.js)
  * Design inspiré de Stripe Checkout (épuré, multi-étapes progressives, 100% compatible CSP).
  *
- * Configuration globale UNE SEULE FOIS pour tous les produits du site :
- *   SlickPay.init({
- *     publicKey: '54|...',
- *     mode: 'sandbox', // 'mock' | 'sandbox' | 'production'
- *     accountType: 'users', // 'users' | 'merchants'
- *     merchantName: 'Ma Boutique',
- *     locale: 'fr',
- *     customFields: [{ key: 'nif', label: 'NIF', required: true }]
- *   });
- *
- * Puis sur chaque produit du site (autant de produits que voulu) :
- *   Option A (Web Component) : <slickpay-button product-name="Produit A" amount="4500"></slickpay-button>
- *   Option B (N'importe quel bouton HTML) : <button data-slickpay data-product-name="Produit A" data-amount="4500">Acheter</button>
- *   Option C (Panier JS) : SlickPay.openCheckout({ productName: 'Panier #12', amount: 18500 })
+ * Durcissement Sécurité & Accessibilité (Audit) :
+ * - Échappement HTML systématique (escapeHtml) sur toutes les valeurs dynamiques (prévention XSS DOM/Shadow DOM)
+ * - Validation stricte des URLs paymentUrl / shopUrl (sanitizeUrl : seuls https:// et http:// sont acceptés, javascript: rejeté)
+ * - Conservation des saisies (formValues) lors du clic sur +/- quantité
+ * - Montant par défaut cohérent (45000 DZD) et support de productId / priceSignature pour la vérification de prix côté serveur
+ * - Accessibilité : fermeture par touche Escape, piégeage du focus (Tab/Shift+Tab), aria-labelledby et role="alert"
+ * - Suivi de statut post-création via SlickPay.checkStatus(invoiceId) et bouton de vérification dans l'Étape 3
  */
 
 (function (global) {
@@ -32,9 +25,33 @@
     currentScript && currentScript.src
       ? currentScript.src.replace(/\/sdk\/slickpay-widget\.js(\?.*)?$/, '/api/checkout.php')
       : './api/checkout.php';
-  const widgetCssUrl = `${scriptBaseUrl}/slickpay-widget.css?v=5`;
+  const widgetCssUrl = `${scriptBaseUrl}/slickpay-widget.css?v=6`;
 
-  // Configuration Globale partagée par tous les produits du site
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function sanitizeUrl(candidateUrl, requireHttps = true) {
+    if (!candidateUrl) return '';
+    try {
+      const parsed = new URL(String(candidateUrl), global.location ? global.location.href : 'https://localhost');
+      if (requireHttps && parsed.protocol !== 'https:') {
+        return '';
+      }
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        return '';
+      }
+      return parsed.toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
   const globalConfig = {
     endpoint: defaultApiUrl,
     mode: 'mock',
@@ -109,7 +126,7 @@
       step1Title: 'Vos coordonnées de contact',
       step2Title: 'Adresse & informations fiscales',
       step3Title: 'Récapitulatif avant redirection SATIM',
-      securedBy: 'Paiement chiffré via SlickPay · SATIM',
+      securedBy: 'Passerelle de paiement SlickPay · SATIM',
       quantity: 'Quantité',
       delivery: 'Frais de livraison',
       freeDelivery: 'Inclus',
@@ -125,9 +142,11 @@
       backBtn: '← Retour',
       generateBtn: 'Valider & préparer le paiement',
       verifyHeading: 'Commande prête pour le règlement',
+      paidHeading: 'Paiement confirmé',
       reservedNotice: 'Lien de paiement SATIM valable pendant 25 minutes.',
       payNow: 'Procéder au paiement',
-      editOrder: '← Modifier mes informations',
+      checkStatusBtn: 'Vérifier le statut du paiement',
+      editOrder: '← Modifier',
       openShopLink: 'Lien marchand',
       processing: 'Connexion à la passerelle...',
     },
@@ -139,7 +158,7 @@
       step1Title: 'Contact information',
       step2Title: 'Billing address & tax details',
       step3Title: 'Order review before SATIM payment',
-      securedBy: 'Encrypted checkout by SlickPay · SATIM',
+      securedBy: 'Payment gateway by SlickPay · SATIM',
       quantity: 'Quantity',
       delivery: 'Delivery',
       freeDelivery: 'Free',
@@ -155,9 +174,11 @@
       backBtn: '← Back',
       generateBtn: 'Confirm & prepare payment',
       verifyHeading: 'Ready for payment',
+      paidHeading: 'Payment confirmed',
       reservedNotice: 'SATIM payment session reserved for 25 minutes.',
       payNow: 'Pay',
-      editOrder: '← Edit details',
+      checkStatusBtn: 'Check payment status',
+      editOrder: '← Edit',
       openShopLink: 'Merchant link',
       processing: 'Connecting to gateway...',
     },
@@ -169,7 +190,7 @@
       step1Title: 'معلومات الاتصال الخاصة بك',
       step2Title: 'عنوان الفوترة والمعلومات الجبائية',
       step3Title: 'مراجعة الطلب قبل الدفع عبر SATIM',
-      securedBy: 'دفع مشفر عبر SlickPay · شبكة SATIM',
+      securedBy: 'بوابة الدفع عبر SlickPay · شبكة SATIM',
       quantity: 'الكمية',
       delivery: 'التوصيل',
       freeDelivery: 'مجاني',
@@ -185,9 +206,11 @@
       backBtn: 'رجوع →',
       generateBtn: 'تأكيد وتحضير رابط الدفع',
       verifyHeading: 'الطلب جاهز للدفع',
+      paidHeading: 'تم تأكيد الدفع',
       reservedNotice: 'رابط الدفع محجوز لمدة 25 دقيقة.',
       payNow: 'ادفع الآن',
-      editOrder: 'تعديل المعلومات',
+      checkStatusBtn: 'تحقق من حالة الدفع',
+      editOrder: 'تعديل',
       openShopLink: 'رابط المتجر',
       processing: 'جاري الاتصال بالبوابة...',
     },
@@ -201,6 +224,7 @@
     constructor() {
       this.host = null;
       this.shadow = null;
+      this.boundKeyDown = this.handleKeyDown.bind(this);
       this.state = {
         step: 1,
         quantity: 1,
@@ -224,10 +248,12 @@
         mode: config.mode || globalConfig.mode,
         publicKey: config.publicKey !== undefined ? config.publicKey : globalConfig.publicKey,
         accountType: config.accountType || globalConfig.accountType,
+        productId: config.productId || '',
+        priceSignature: config.priceSignature || '',
         productName: config.productName || 'Commande',
         productDescription:
           config.productDescription || 'Paiement sécurisé CIB / Edahabia',
-        amount: Number(config.amount || 1000),
+        amount: Number(config.amount || 45000),
         deliveryFee:
           config.deliveryFee !== undefined
             ? Number(config.deliveryFee)
@@ -236,16 +262,19 @@
         locale: config.locale || globalConfig.locale || 'fr',
         shopUrl: config.shopUrl !== undefined ? config.shopUrl : globalConfig.shopUrl,
         returnUrl: config.returnUrl || globalConfig.returnUrl || '',
-        customFields: Array.isArray(config.customFields) && config.customFields.length > 0
-          ? config.customFields
-          : globalConfig.customFields,
+        customFields:
+          Array.isArray(config.customFields) && config.customFields.length > 0
+            ? config.customFields
+            : globalConfig.customFields,
         prefill: config.prefill || {},
         onSuccess: config.onSuccess || null,
+        onSessionCreated: config.onSessionCreated || config.onSuccess || null,
+        onPaymentVerified: config.onPaymentVerified || null,
         onError: config.onError || null,
       };
 
       this.state.step = 1;
-      this.state.quantity = Math.max(1, Number(config.quantity || 1));
+      this.state.quantity = Math.max(1, Math.min(1000, parseInt(config.quantity || 1, 10) || 1));
       this.state.loading = false;
       this.state.error = null;
       this.state.session = null;
@@ -263,16 +292,72 @@
         this.host.id = 'slickpay-universal-modal-host';
         this.shadow = this.host.attachShadow({ mode: 'open' });
         document.body.appendChild(this.host);
+        document.addEventListener('keydown', this.boundKeyDown);
       }
 
       this.render();
     }
 
     close() {
+      document.removeEventListener('keydown', this.boundKeyDown);
       if (this.host && this.host.parentNode) {
         this.host.parentNode.removeChild(this.host);
         this.host = null;
         this.shadow = null;
+      }
+    }
+
+    handleKeyDown(e) {
+      if (!this.shadow) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.close();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const focusables = Array.from(
+          this.shadow.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href]'
+          )
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = this.shadow.activeElement;
+        if (e.shiftKey && (active === first || !active)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    /**
+     * Sauvegarde les champs en cours de saisie avant un re-rendu (ex: clic sur +/- quantité)
+     */
+    captureCurrentInputs() {
+      if (!this.shadow) return;
+      const fnEl = this.shadow.getElementById('sp-fullName');
+      const emEl = this.shadow.getElementById('sp-email');
+      const phEl = this.shadow.getElementById('sp-phone');
+      const wiEl = this.shadow.getElementById('sp-wilaya');
+      const adEl = this.shadow.getElementById('sp-address');
+
+      if (fnEl) this.state.formValues.fullName = fnEl.value;
+      if (emEl) this.state.formValues.email = emEl.value;
+      if (phEl) this.state.formValues.phone = phEl.value;
+      if (wiEl) this.state.formValues.wilaya = wiEl.value;
+      if (adEl) this.state.formValues.address = adEl.value;
+
+      if (this.config && Array.isArray(this.config.customFields)) {
+        for (const f of this.config.customFields) {
+          const cfEl = this.shadow.getElementById(`sp-custom-${f.key}`);
+          if (cfEl) {
+            this.state.formValues.customFields[f.key] = cfEl.value;
+          }
+        }
       }
     }
 
@@ -281,16 +366,15 @@
     }
 
     get totalAmount() {
-      return this.config.amount * this.state.quantity + this.config.deliveryFee;
+      return Math.round((this.config.amount * this.state.quantity + this.config.deliveryFee) * 100) / 100;
     }
 
     handleStep1Next(event) {
       event.preventDefault();
-      const form = event.target;
-      const fd = new FormData(form);
-      this.state.formValues.fullName = String(fd.get('fullName') || '').trim();
-      this.state.formValues.email = String(fd.get('email') || '').trim();
-      this.state.formValues.phone = String(fd.get('phone') || '').trim();
+      this.captureCurrentInputs();
+      this.state.formValues.fullName = String(this.state.formValues.fullName || '').trim();
+      this.state.formValues.email = String(this.state.formValues.email || '').trim();
+      this.state.formValues.phone = String(this.state.formValues.phone || '').trim();
       this.state.error = null;
       this.state.step = 2;
       this.render();
@@ -298,17 +382,9 @@
 
     async handleStep2Submit(event) {
       event.preventDefault();
-      const form = event.target;
-      const fd = new FormData(form);
-
-      this.state.formValues.wilaya = fd.get('wilaya') || '16';
-      this.state.formValues.address = String(fd.get('address') || '').trim();
-
-      const customObj = {};
-      for (const field of this.config.customFields) {
-        customObj[field.key] = String(fd.get(`custom_${field.key}`) || '').trim();
-      }
-      this.state.formValues.customFields = customObj;
+      this.captureCurrentInputs();
+      this.state.formValues.wilaya = this.state.formValues.wilaya || '16';
+      this.state.formValues.address = String(this.state.formValues.address || '').trim();
 
       this.state.loading = true;
       this.state.error = null;
@@ -323,6 +399,8 @@
             publicKey: this.config.publicKey || undefined,
             accountType: this.config.accountType,
             returnUrl: this.config.returnUrl || undefined,
+            productId: this.config.productId || undefined,
+            priceSignature: this.config.priceSignature || undefined,
             productName: this.config.productName,
             amount: this.config.amount,
             quantity: this.state.quantity,
@@ -351,8 +429,8 @@
         window.dispatchEvent(
           new CustomEvent('slickpay:session-created', { detail: data })
         );
-        if (typeof this.config.onSuccess === 'function') {
-          this.config.onSuccess(data);
+        if (typeof this.config.onSessionCreated === 'function') {
+          this.config.onSessionCreated(data);
         }
       } catch (err) {
         this.state.loading = false;
@@ -369,6 +447,35 @@
       }
     }
 
+    async verifyCurrentSessionStatus() {
+      if (!this.state.session || !this.state.session.invoiceId) return;
+      this.state.loading = true;
+      this.state.error = null;
+      this.render();
+      try {
+        const statusData = await checkStatusRequest(
+          this.state.session.invoiceId,
+          this.config
+        );
+        this.state.session.status = statusData.status || 'pending';
+        this.state.loading = false;
+        this.render();
+        window.dispatchEvent(
+          new CustomEvent('slickpay:status-checked', { detail: statusData })
+        );
+        if (
+          statusData.status === 'paid' &&
+          typeof this.config.onPaymentVerified === 'function'
+        ) {
+          this.config.onPaymentVerified(statusData);
+        }
+      } catch (err) {
+        this.state.loading = false;
+        this.state.error = err.message;
+        this.render();
+      }
+    }
+
     render() {
       if (!this.shadow) return;
       const t = this.dict;
@@ -377,23 +484,26 @@
 
       const wilayaOptions = WILAYAS_58.map(
         ([code, name]) =>
-          `<option value="${code}" ${
+          `<option value="${escapeHtml(code)}" ${
             this.state.formValues.wilaya === code ? 'selected' : ''
-          }>${code} - ${name}</option>`
+          }>${escapeHtml(code)} - ${escapeHtml(name)}</option>`
       ).join('');
 
       const customFieldsHtml = this.config.customFields
         .map((f) => {
-          const val = this.state.formValues.customFields[f.key] || '';
+          const safeKey = escapeHtml(f.key);
+          const safeLabel = escapeHtml(f.label);
+          const safePlaceholder = escapeHtml(f.placeholder || f.label);
+          const val = escapeHtml(this.state.formValues.customFields[f.key] || '');
           return `
             <div class="sp-field">
-              <label for="sp-custom-${f.key}">${f.label}${f.required ? ' *' : ''}</label>
+              <label for="sp-custom-${safeKey}">${safeLabel}${f.required ? ' *' : ''}</label>
               <input
-                id="sp-custom-${f.key}"
-                name="custom_${f.key}"
+                id="sp-custom-${safeKey}"
+                name="custom_${safeKey}"
                 type="text"
-                value="${val.replace(/"/g, '&quot;')}"
-                placeholder="${f.placeholder || f.label}"
+                value="${val}"
+                placeholder="${safePlaceholder}"
                 ${f.required ? 'required' : ''}
               />
             </div>
@@ -403,35 +513,35 @@
 
       const step1Html = `
         <form id="sp-step1-form">
-          <p class="sp-step-title">${t.step1Title}</p>
+          <p class="sp-step-title">${escapeHtml(t.step1Title)}</p>
 
           <div class="sp-qty-bar">
-            <span>${t.quantity} (${formatDzd(this.config.amount)} / u)</span>
+            <span>${escapeHtml(t.quantity)} (${escapeHtml(formatDzd(this.config.amount))} / u)</span>
             <div class="sp-stepper">
               <button type="button" id="sp-qty-minus" ${this.state.quantity <= 1 ? 'disabled' : ''}>−</button>
-              <output id="sp-qty-val">${this.state.quantity}</output>
+              <output id="sp-qty-val">${escapeHtml(this.state.quantity)}</output>
               <button type="button" id="sp-qty-plus">+</button>
             </div>
           </div>
 
           <div class="sp-field">
-            <label for="sp-fullName">${t.fullName} *</label>
-            <input id="sp-fullName" name="fullName" type="text" required value="${this.state.formValues.fullName.replace(/"/g, '&quot;')}" placeholder="Ex: Amine Benali" />
+            <label for="sp-fullName">${escapeHtml(t.fullName)} *</label>
+            <input id="sp-fullName" name="fullName" type="text" required value="${escapeHtml(this.state.formValues.fullName)}" placeholder="Ex: Amine Benali" />
           </div>
 
           <div class="sp-field">
-            <label for="sp-email">${t.email} *</label>
-            <input id="sp-email" name="email" type="email" required value="${this.state.formValues.email.replace(/"/g, '&quot;')}" placeholder="nom@entreprise.dz" />
+            <label for="sp-email">${escapeHtml(t.email)} *</label>
+            <input id="sp-email" name="email" type="email" required value="${escapeHtml(this.state.formValues.email)}" placeholder="nom@entreprise.dz" />
           </div>
 
           <div class="sp-field">
-            <label for="sp-phone">${t.phone} *</label>
-            <input id="sp-phone" name="phone" type="tel" required value="${this.state.formValues.phone.replace(/"/g, '&quot;')}" placeholder="0550 00 00 00" />
+            <label for="sp-phone">${escapeHtml(t.phone)} *</label>
+            <input id="sp-phone" name="phone" type="tel" required value="${escapeHtml(this.state.formValues.phone)}" placeholder="0550 00 00 00" />
           </div>
 
           <div class="sp-actions-row">
             <button type="submit" class="sp-btn-primary" id="sp-step1-next">
-              ${t.nextBtn}
+              ${escapeHtml(t.nextBtn)}
             </button>
           </div>
         </form>
@@ -439,19 +549,19 @@
 
       const step2Html = `
         <form id="sp-step2-form">
-          <p class="sp-step-title">${t.step2Title}</p>
+          <p class="sp-step-title">${escapeHtml(t.step2Title)}</p>
 
           <div class="sp-field">
-            <label for="sp-wilaya">${t.wilaya} *</label>
+            <label for="sp-wilaya">${escapeHtml(t.wilaya)} *</label>
             <select id="sp-wilaya" name="wilaya" required>
-              <option value="">${t.chooseWilaya}</option>
+              <option value="">${escapeHtml(t.chooseWilaya)}</option>
               ${wilayaOptions}
             </select>
           </div>
 
           <div class="sp-field">
-            <label for="sp-address">${t.address} *</label>
-            <input id="sp-address" name="address" type="text" required value="${this.state.formValues.address.replace(/"/g, '&quot;')}" placeholder="Rue, Commune, Ville..." />
+            <label for="sp-address">${escapeHtml(t.address)} *</label>
+            <input id="sp-address" name="address" type="text" required value="${escapeHtml(this.state.formValues.address)}" placeholder="Rue, Commune, Ville..." />
           </div>
 
           ${
@@ -462,75 +572,94 @@
 
           ${
             this.state.error
-              ? `<div class="sp-error">${this.state.error}</div>`
+              ? `<div class="sp-error" role="alert">${escapeHtml(this.state.error)}</div>`
               : ''
           }
 
           <div class="sp-actions-row">
             <button type="button" class="sp-btn-secondary" id="sp-step2-back">
-              ${t.backBtn}
+              ${escapeHtml(t.backBtn)}
             </button>
             <button type="submit" class="sp-btn-primary" id="sp-step2-submit" ${this.state.loading ? 'disabled' : ''}>
-              ${this.state.loading ? t.processing : t.generateBtn}
+              ${escapeHtml(this.state.loading ? t.processing : t.generateBtn)}
             </button>
           </div>
         </form>
       `;
 
       const session = this.state.session;
+      const safePaymentUrl = session ? sanitizeUrl(session.paymentUrl, true) : '';
+      const safeShopUrl = sanitizeUrl(this.config.shopUrl, false);
+      const isPaid = session && session.status === 'paid';
+
       const step3Html = session
         ? `
         <div>
-          <div class="sp-status-pill">✓ ${t.verifyHeading}</div>
-          <p class="sp-reserve-note">${t.reservedNotice}</p>
+          <div class="sp-status-pill">✓ ${escapeHtml(isPaid ? t.paidHeading : t.verifyHeading)}</div>
+          <p class="sp-reserve-note">${escapeHtml(t.reservedNotice)}</p>
 
           <div class="sp-summary-card">
             <div class="sp-summary-row">
-              <span>${t.product}</span>
-              <strong>${this.config.productName} × ${this.state.quantity}</strong>
+              <span>${escapeHtml(t.product)}</span>
+              <strong>${escapeHtml(this.config.productName)} × ${escapeHtml(this.state.quantity)}</strong>
             </div>
             <div class="sp-summary-row">
               <span>Client</span>
-              <span>${session.customer.fullName}</span>
+              <span>${escapeHtml(session.customer?.fullName || this.state.formValues.fullName)}</span>
             </div>
             <div class="sp-summary-row">
               <span>Wilaya</span>
-              <span>${session.customer.wilaya}</span>
+              <span>${escapeHtml(session.customer?.wilaya || this.state.formValues.wilaya)}</span>
             </div>
             <div class="sp-summary-row">
               <span>Réf. transaction</span>
-              <code>${session.invoiceId}</code>
+              <code>${escapeHtml(session.invoiceId)}</code>
             </div>
             <div class="sp-summary-row sp-total">
-              <span>${t.total}</span>
-              <strong>${formatDzd(session.totals.totalChargeDzd)}</strong>
+              <span>${escapeHtml(t.total)}</span>
+              <strong>${escapeHtml(formatDzd(session.totals?.totalChargeDzd || this.totalAmount))}</strong>
             </div>
           </div>
 
+          ${
+            this.state.error
+              ? `<div class="sp-error" role="alert">${escapeHtml(this.state.error)}</div>`
+              : ''
+          }
+
           <div class="sp-actions-row">
             <button type="button" class="sp-btn-secondary" id="sp-edit-order-btn">
-              ${t.editOrder}
+              ${escapeHtml(t.editOrder)}
             </button>
-            <a href="${session.paymentUrl}" target="_blank" rel="noopener noreferrer" class="sp-btn-primary" id="sp-pay-satim-btn">
-              ${t.payNow} (${formatDzd(session.totals.totalChargeDzd)}) →
-            </a>
+            ${
+              safePaymentUrl
+                ? `<a href="${escapeHtml(safePaymentUrl)}" target="_blank" rel="noopener noreferrer" class="sp-btn-primary" id="sp-pay-satim-btn">
+                    ${escapeHtml(t.payNow)} (${escapeHtml(formatDzd(session.totals?.totalChargeDzd || this.totalAmount))}) →
+                  </a>`
+                : ''
+            }
+          </div>
+          <div class="sp-actions-row">
+            <button type="button" class="sp-btn-secondary" id="sp-check-status-btn" ${this.state.loading ? 'disabled' : ''}>
+              ${escapeHtml(this.state.loading ? t.processing : t.checkStatusBtn)}
+            </button>
           </div>
         </div>
       `
         : '';
 
       this.shadow.innerHTML = `
-        <link rel="stylesheet" href="${widgetCssUrl}" />
+        <link rel="stylesheet" href="${escapeHtml(widgetCssUrl)}" />
         <div class="sp-overlay" dir="${isRtl ? 'rtl' : 'ltr'}">
-          <div class="sp-modal" role="dialog" aria-modal="true">
+          <div class="sp-modal" role="dialog" aria-modal="true" aria-labelledby="sp-modal-title">
             <div class="sp-header">
               <div class="sp-merchant-info">
                 <span class="sp-merchant-tag">
                   <span class="sp-dot"></span>
-                  ${this.config.merchantName}
+                  ${escapeHtml(this.config.merchantName)}
                 </span>
-                <h3 class="sp-amount-hero">${formatDzd(this.totalAmount)}</h3>
-                <p class="sp-product-sub">${this.config.productName} — ${this.config.productDescription}</p>
+                <h3 class="sp-amount-hero" id="sp-modal-title">${escapeHtml(formatDzd(this.totalAmount))}</h3>
+                <p class="sp-product-sub">${escapeHtml(this.config.productName)} — ${escapeHtml(this.config.productDescription)}</p>
               </div>
               <button type="button" class="sp-close" id="sp-close-btn" aria-label="Fermer">✕</button>
             </div>
@@ -538,17 +667,17 @@
             <div class="sp-steps-bar">
               <div class="sp-step-item ${s === 1 ? 'active' : s > 1 ? 'done' : ''}">
                 <span class="sp-step-num">${s > 1 ? '✓' : '1'}</span>
-                <span>${t.step1Label}</span>
+                <span>${escapeHtml(t.step1Label)}</span>
               </div>
               <div class="sp-step-sep"></div>
               <div class="sp-step-item ${s === 2 ? 'active' : s > 2 ? 'done' : ''}">
                 <span class="sp-step-num">${s > 2 ? '✓' : '2'}</span>
-                <span>${t.step2Label}</span>
+                <span>${escapeHtml(t.step2Label)}</span>
               </div>
               <div class="sp-step-sep"></div>
               <div class="sp-step-item ${s === 3 ? 'active' : ''}">
                 <span class="sp-step-num">3</span>
-                <span>${t.step3Label}</span>
+                <span>${escapeHtml(t.step3Label)}</span>
               </div>
             </div>
 
@@ -557,10 +686,10 @@
             </div>
 
             <div class="sp-footer">
-              <span>${t.securedBy}</span>
+              <span>${escapeHtml(t.securedBy)}</span>
               ${
-                this.config.shopUrl
-                  ? `<a href="${this.config.shopUrl}" target="_blank" rel="noopener">${t.openShopLink} ↗</a>`
+                safeShopUrl
+                  ? `<a href="${escapeHtml(safeShopUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.openShopLink)} ↗</a>`
                   : ''
               }
             </div>
@@ -575,6 +704,7 @@
       if (minusBtn) {
         minusBtn.addEventListener('click', () => {
           if (this.state.quantity > 1) {
+            this.captureCurrentInputs();
             this.state.quantity -= 1;
             this.render();
           }
@@ -584,8 +714,11 @@
       const plusBtn = this.shadow.getElementById('sp-qty-plus');
       if (plusBtn) {
         plusBtn.addEventListener('click', () => {
-          this.state.quantity += 1;
-          this.render();
+          if (this.state.quantity < 1000) {
+            this.captureCurrentInputs();
+            this.state.quantity += 1;
+            this.render();
+          }
         });
       }
 
@@ -597,6 +730,7 @@
       const step2Back = this.shadow.getElementById('sp-step2-back');
       if (step2Back) {
         step2Back.addEventListener('click', () => {
+          this.captureCurrentInputs();
           this.state.step = 1;
           this.state.error = null;
           this.render();
@@ -615,13 +749,43 @@
           this.render();
         });
       }
+
+      const checkStatusBtn = this.shadow.getElementById('sp-check-status-btn');
+      if (checkStatusBtn) {
+        checkStatusBtn.addEventListener('click', () =>
+          this.verifyCurrentSessionStatus()
+        );
+      }
     }
+  }
+
+  async function checkStatusRequest(invoiceId, opts = {}) {
+    const endpoint = opts.endpoint || globalConfig.endpoint;
+    const mode = opts.mode || globalConfig.mode;
+    const publicKey =
+      opts.publicKey !== undefined ? opts.publicKey : globalConfig.publicKey;
+    const accountType = opts.accountType || globalConfig.accountType;
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'status',
+        invoiceId,
+        mode,
+        publicKey: publicKey || undefined,
+        accountType,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Impossible de vérifier le statut de la facture.');
+    }
+    return data;
   }
 
   const modalSingleton = new SlickPayModalController();
 
-  // Délégation globale sur tout élément HTML possédant [data-slickpay]
-  // Permet d'équiper 50 boutons produits existants sans toucher à leur CSS !
   if (typeof document !== 'undefined') {
     document.addEventListener('click', function (e) {
       const trigger = e.target.closest && e.target.closest('[data-slickpay]');
@@ -629,11 +793,14 @@
       e.preventDefault();
       const ds = trigger.dataset;
       modalSingleton.open({
+        productId: ds.productId || '',
+        priceSignature: ds.priceSignature || '',
         productName: ds.productName || ds.name || 'Article',
         productDescription: ds.productDescription || ds.description || '',
-        amount: Number(ds.amount || ds.price || 1000),
+        amount: Number(ds.amount || ds.price || 45000),
         quantity: Number(ds.quantity || 1),
-        deliveryFee: ds.deliveryFee !== undefined ? Number(ds.deliveryFee) : undefined,
+        deliveryFee:
+          ds.deliveryFee !== undefined ? Number(ds.deliveryFee) : undefined,
       });
     });
   }
@@ -665,7 +832,7 @@
             <rect x="2" y="5" width="20" height="14" rx="2"></rect>
             <line x1="2" y1="10" x2="22" y2="10"></line>
           </svg>
-          <span>${label}</span>
+          <span>${escapeHtml(label)}</span>
         </button>
       `;
 
@@ -687,11 +854,12 @@
         mode: this.getAttribute('mode') || undefined,
         publicKey: this.getAttribute('public-key') || undefined,
         accountType: this.getAttribute('account-type') || undefined,
-        productName:
-          this.getAttribute('product-name') || 'Produit',
+        productId: this.getAttribute('product-id') || undefined,
+        priceSignature: this.getAttribute('price-signature') || undefined,
+        productName: this.getAttribute('product-name') || 'Produit',
         productDescription:
           this.getAttribute('product-description') || undefined,
-        amount: Number(this.getAttribute('amount') || 1000),
+        amount: Number(this.getAttribute('amount') || 45000),
         quantity: Number(this.getAttribute('quantity') || 1),
         deliveryFee: this.hasAttribute('delivery-fee')
           ? Number(this.getAttribute('delivery-fee'))
@@ -709,12 +877,8 @@
   }
 
   global.SlickPay = {
-    /**
-     * Configure le Bridge UNE SEULE FOIS pour tous les produits du site
-     */
     init: function (options = {}) {
       Object.assign(globalConfig, options);
-      // Rafraîchit les boutons <slickpay-button> déjà présents si la langue a changé
       document.querySelectorAll('slickpay-button').forEach((el) => {
         if (typeof el.renderButton === 'function') el.renderButton();
       });
@@ -725,6 +889,9 @@
     },
     openCheckout: (options) => modalSingleton.open(options),
     closeCheckout: () => modalSingleton.close(),
+    checkStatus: (invoiceId, options) => checkStatusRequest(invoiceId, options),
+    escapeHtml,
+    sanitizeUrl,
     WILAYAS_58,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

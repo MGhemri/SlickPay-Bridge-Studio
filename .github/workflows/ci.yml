@@ -11,12 +11,12 @@ permissions:
 
 jobs:
   node-tests:
-    name: Node.js SDK & CSP Tests (${{ matrix.node-version }})
+    name: Node.js SDK, Lint & Audit Tests (${{ matrix.node-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [20.x, 22.x]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,7 +26,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Run unit, integration, CSP & license compliance tests
+      - name: Lint JavaScript & ESM syntax
+        run: npm run lint
+
+      - name: Run unit, integration, XSS, CSP, HMAC & catalog security tests
         run: npm test
 
       - name: Verify NPM package build (dry-run)
@@ -50,7 +53,7 @@ jobs:
           php -l public/api/checkout.php
           php -l public/index.php
 
-      - name: Smoke test PHP gateway endpoint (Mock & Single-word name 422 fix)
+      - name: Smoke test PHP gateway endpoint (Mock, Algerian phone validation & 422 fix)
         run: |
           php -S 127.0.0.1:8089 -t public >/dev/null 2>&1 &
           PHP_PID=$!
@@ -69,10 +72,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check for private tokens or credentials
+      - name: Check for private tokens, live SlickPay bearer keys or private keys
         run: |
           if grep -RInE "(ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN [A-Z ]+ PRIVATE KEY-----)" --exclude-dir=.git .; then
             echo "Error: Private token or key detected in repository!"
+            exit 1
+          fi
+          # Detect any SlickPay bearer key (NN|40chars) other than the official public sandbox test token 54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnBzK5cOE6
+          LEAKED_SP_KEYS=$(grep -RInE "\b[0-9]{1,5}\|[A-Za-z0-9]{35,50}\b" --exclude-dir=.git . | grep -v "54|BZ7F6N4KwSD46GEXToOv3ZBpJpf7WVxnBzK5cOE6" || true)
+          if [ -n "$LEAKED_SP_KEYS" ]; then
+            echo "Error: Live SlickPay Bearer key detected in repository:"
+            echo "$LEAKED_SP_KEYS"
             exit 1
           fi
           echo "No secret leaks found."
