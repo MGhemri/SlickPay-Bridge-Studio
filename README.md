@@ -1,8 +1,28 @@
 # SlickPay Bridge Studio
 
-Passerelle web et studio générateur d'intégration multi-produits pour SlickPay (CIB / Edahabia / SATIM). Ce projet permet à tout développeur d'intégrer le paiement électronique algérien sur un site web ou une application SaaS en configurant sa boutique une seule fois (`SlickPay.init`), puis en déclenchant un parcours de paiement en 3 étapes inspiré de Stripe Checkout.
+Passerelle web et studio générateur d'intégration multi-produits pour SlickPay (CIB / Edahabia / SATIM). Ce projet permet à tout développeur ou commerçant — même non initié — d'intégrer le paiement électronique algérien sur n'importe quel site web en configurant sa boutique une seule fois (`SlickPay.init`), puis en déclenchant un parcours de paiement en 3 étapes inspiré de Stripe Checkout.
 
 - Démo et générateur en ligne : [https://connect-gm.com/slickpay-test/](https://connect-gm.com/slickpay-test/)
+- Guide complet pas-à-pas pour les débutants et intégrateurs : [docs/GUIDE-UTILISATION.md](docs/GUIDE-UTILISATION.md)
+- Licence d'utilisation (Gratuit pour les développeurs / Usage commercial réglementé) : [LICENSE](LICENSE)
+
+---
+
+## Comment ça fonctionne ? (Les 3 modes d'utilisation)
+
+Vous **n'avez pas besoin d'installer Node.js ni de lancer le projet en local** pour utiliser ce Bridge sur votre site web. Il existe 3 modes d'utilisation détaillés dans [docs/GUIDE-UTILISATION.md](docs/GUIDE-UTILISATION.md) :
+
+1. **Mode 1 — Service Hébergé / Sans aucune installation (Pour les non-initiés et intégrateurs rapides)** :
+   - Vous ouvrez directement le générateur en ligne ([https://connect-gm.com/slickpay-test/](https://connect-gm.com/slickpay-test/)).
+   - Vous remplissez vos informations (nom de boutique, clé publique SlickPay, liste de vos produits).
+   - Vous copiez-collez le code généré directement dans votre site (WordPress, HTML, PrestaShop, Shopify, React...). Ça fonctionne immédiatement grâce au script et au relais hébergés.
+   - *(Note : Ce service est actuellement hébergé sur notre serveur de démonstration et est conçu pour pouvoir être hébergé nativement chez SlickPay dans le futur s'ils le souhaitent).*
+
+2. **Mode 2 — Auto-Hébergé sur votre propre serveur web (cPanel / PHP)** :
+   - Si vous souhaitez que tout tourne sur votre propre nom de domaine (`https://maboutique.dz`), il vous suffit de copier les **3 fichiers** du dossier `public/` (`sdk/slickpay-widget.js`, `sdk/slickpay-widget.css` et `api/checkout.php`) sur votre hébergement cPanel/FTP. Aucune base de données ni serveur Node.js n'est requis.
+
+3. **Mode 3 — Développement en local (`localhost:3400` via Node.js)** :
+   - Les commandes `git clone` et `npm start` servent uniquement aux développeurs qui veulent faire tourner ou modifier le code source du générateur sur leur propre ordinateur (`localhost:3400` n'étant accessible que depuis votre machine locale).
 
 ---
 
@@ -34,7 +54,7 @@ Après validation de l'étape 2, la passerelle backend crée la facture auprès 
 
 ---
 
-## Guide d'intégration pour les développeurs
+## Guide d'intégration rapide (Copier-Coller)
 
 L'intégration repose sur un principe simple : **une seule initialisation globale pour tout le site**, suivie d'autant de boutons produits que nécessaire.
 
@@ -43,10 +63,10 @@ L'intégration repose sur un principe simple : **une seule initialisation global
 Placez ce bloc unique dans l'en-tête (`<head>`) ou en bas de page (`<footer>`) de votre site web :
 
 ```html
-<script src="https://votre-domaine.dz/sdk/slickpay-widget.js"></script>
+<script src="https://connect-gm.com/slickpay-test/sdk/slickpay-widget.js"></script>
 <script>
   SlickPay.init({
-    endpoint: "https://votre-domaine.dz/api/checkout.php",
+    endpoint: "https://connect-gm.com/slickpay-test/api/checkout.php",
     merchantName: "Boutique Demo DZ",
     mode: "sandbox",          // "mock" | "sandbox" | "production"
     accountType: "users",     // "users" (/api/v2/users/invoices) | "merchants" (/api/v2/merchants/invoices)
@@ -148,25 +168,9 @@ window.addEventListener("slickpay:session-error", function (event) {
 
 ---
 
-## Architecture Backend et compatibilité API SlickPay v2
+## Développement et test du code source en local (Optionnel — Mode 3)
 
-Le dépôt fournit deux implémentations backend équivalentes pour relayer les appels vers SlickPay en évitant les problèmes de CORS et en normalisant les données :
-
-1. **Passerelle PHP (`public/api/checkout.php`)** :
-   - Prête à être déposée sur n'importe quel hébergement mutualisé, serveur cPanel, Apache ou Nginx (PHP 7.4+ avec `ext-curl`).
-   - Normalise automatiquement les noms composés d'un seul mot (renseigne `firstname`, `lastname` et `name` pour éviter les erreurs `HTTP 422` sur `/api/v2/users/invoices` et `/api/v2/merchants/invoices`).
-   - Nettoie le format du numéro de téléphone et détecte l'utilisation accidentelle d'une clé de test Sandbox en mode Production.
-
-2. **Passerelle et SDK Node.js (`server/slickpay-sdk.mjs` et `server/index.mjs`)** :
-   - Serveur HTTP Node.js autonome (zéro dépendance externe, utilise `fetch` natif).
-   - Expose les routes `POST /api/slickpay/checkout`, `POST /api/slickpay/commission`, `GET /api/slickpay/status/:id`, `POST /api/slickpay/webhook` et `GET /api/slickpay/wilayas`.
-   - Exporte également les classes `Invoice` et `MerchantInvoice` compatibles avec la signature du package `@slick-pay-algeria/slickpay-npm`, en corrigeant la route de calcul de commission (`POST /api/v2/users/invoices/commission`).
-
----
-
-## Installation et exécution en local
-
-Prérequis : Node.js 18 ou supérieur.
+Si vous êtes développeur et souhaitez modifier le code source ou exécuter les tests unitaires sur votre machine locale (nécessite Node.js 18+) :
 
 ```bash
 git clone https://github.com/MGhemri/SlickPay-Bridge-Studio.git
@@ -175,11 +179,9 @@ cd SlickPay-Bridge-Studio
 # Exécuter la suite de tests automatisés
 npm test
 
-# Démarrer le serveur local et le Bridge Studio sur le port 3400
+# Démarrer le serveur de développement local sur http://localhost:3400
 npm start
 ```
-
-Ouvrez ensuite `http://localhost:3400` dans votre navigateur.
 
 ---
 
@@ -188,6 +190,7 @@ Ouvrez ensuite `http://localhost:3400` dans votre navigateur.
 ```text
 SlickPay-Bridge-Studio/
 ├── docs/
+│   ├── GUIDE-UTILISATION.md      # Guide détaillé pour non-initiés (Hébergé vs cPanel vs Local)
 │   └── screenshots/
 │       ├── 01-bridge-studio-overview.png
 │       ├── 02-checkout-step1-contact.png
@@ -207,6 +210,15 @@ SlickPay-Bridge-Studio/
 │   └── slickpay-sdk.mjs          # Coeur du SDK Node.js + classes Invoice / MerchantInvoice
 ├── test/
 │   └── gateway.test.mjs          # Tests unitaires et d'intégration
+├── LICENSE                       # Gratuit pour les développeurs / Commercialisation soumise à accord
 ├── package.json
 └── README.md
 ```
+
+---
+
+## Licence
+
+Ce projet est distribué sous une licence spécifique (voir le fichier [LICENSE](LICENSE)) :
+- **Utilisation gratuite pour les développeurs et marchands** : Tout développeur, freelance ou commerçant peut utiliser, modifier et intégrer gratuitement ce Bridge sur ses sites web ou ceux de ses clients pour accepter des paiements via SlickPay.
+- **Restriction de commercialisation** : Il est interdit de revendre ce logiciel en tant que plugin/service payant ou de l'exploiter commercialement au sein d'une plateforme de paiement sans l'accord écrit préalable de l'auteur.
