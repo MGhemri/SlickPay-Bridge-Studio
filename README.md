@@ -3,6 +3,7 @@
 Passerelle web et studio générateur d'intégration multi-produits pour SlickPay (CIB / Edahabia / SATIM). Ce projet permet à tout développeur ou commerçant — même non initié — d'intégrer le paiement électronique algérien sur n'importe quel site web en configurant sa boutique une seule fois (`SlickPay.init`), puis en déclenchant un parcours de paiement en 3 étapes inspiré de Stripe Checkout.
 
 - Démo et générateur en ligne : [https://connect-gm.com/slickpay-test/](https://connect-gm.com/slickpay-test/)
+- Package officiel sur npmjs.com : [https://www.npmjs.com/package/slickpay-bridge-studio](https://www.npmjs.com/package/slickpay-bridge-studio) (`npm install slickpay-bridge-studio`)
 - Guide complet pas-à-pas pour les débutants et intégrateurs : [docs/GUIDE-UTILISATION.md](docs/GUIDE-UTILISATION.md)
 - Politique de sécurité et garde-fous CI/CD : [SECURITY.md](SECURITY.md)
 - Licence d'utilisation (Gratuit pour le développeur sur ses propres projets / Usage commercial réglementé) : [LICENSE](LICENSE)
@@ -207,9 +208,23 @@ Passez ensuite cette signature dans l'attribut `price-signature="..."` (ou `data
 
 ---
 
-## Développement et test du code source en local (Optionnel — Mode 3)
+## Installation via NPM (Node.js) ou développement en local (Optionnel — Mode 3)
 
-Si vous êtes développeur et souhaitez modifier le code source ou exécuter les tests unitaires sur votre machine locale (nécessite Node.js 18+) :
+Le package est publié officiellement sur le registre public **npmjs.com** (0 dépendance externe) :
+
+```bash
+npm install slickpay-bridge-studio
+# ou sous le scope auteur :
+npm install @ghemrim/slickpay-bridge-studio
+```
+
+Exemple d'utilisation en Node.js :
+
+```javascript
+import { SlickPayGateway, WILAYAS_58 } from "slickpay-bridge-studio";
+```
+
+Si vous souhaitez cloner le dépôt complet pour modifier le code source ou exécuter les tests unitaires sur votre machine locale (nécessite Node.js 20+) :
 
 ```bash
 git clone https://github.com/MGhemri/SlickPay-Bridge-Studio.git

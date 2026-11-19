@@ -45,12 +45,40 @@ jobs:
           PKG_NAME=$(node -p "require('./package.json').name")
           PKG_VERSION=$(node -p "require('./package.json').version")
           if npm view "${PKG_NAME}@${PKG_VERSION}" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
-            echo "Package ${PKG_NAME}@${PKG_VERSION} is already published on GitHub Packages. Skipping npm publish."
+            echo "Package ${PKG_NAME}@${PKG_VERSION} is already published on GitHub Packages. Skipping."
           else
             npm publish
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to npmjs.com (if NPM_TOKEN secret is configured)
+        if: env.NPM_AUTH_TOKEN != ''
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            delete pkg.publishConfig;
+            pkg.name = "slickpay-bridge-studio";
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+          '
+          echo "//registry.npmjs.org/:_authToken=${NPM_AUTH_TOKEN}" > ~/.npmrc
+          if ! npm view "slickpay-bridge-studio@${PKG_VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
+            npm publish --registry=https://registry.npmjs.org/ --access public
+          fi
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.name = "@ghemrim/slickpay-bridge-studio";
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+          '
+          if ! npm view "@ghemrim/slickpay-bridge-studio@${PKG_VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
+            npm publish --registry=https://registry.npmjs.org/ --access public
+          fi
+          git checkout package.json
+        env:
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Attach assets to GitHub Release
         uses: softprops/action-gh-release@v3
